@@ -58,7 +58,12 @@ pub mod inner {
         () => {{
             use $crate::cycle_trace::inner::TRACE_SIGNAL_CHANNEL;
             unsafe {
-                core::ptr::write_volatile((&mut TRACE_SIGNAL_CHANNEL) as *mut u32, 1u32);
+                core::ptr::write_volatile((&mut TRACE_SIGNAL_CHANNEL) as *mut u32, 0u32);
+                core::arch::asm!(
+                        r#"
+                        nop
+                    "#
+                );
             }
         }};
     }

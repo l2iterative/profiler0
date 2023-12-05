@@ -639,14 +639,14 @@ fn main() {
     stop_timer!();
     /************************************************************/
 
+    /************************************************************/
+    start_timer!("Perform final reduction");
+
     let mut ok_flag = borrow == 0;
     for i in 64..129 {
         ok_flag &= c_reduce_limbs[i] == 0;
     }
     assert!(ok_flag);
-
-    /************************************************************/
-    start_timer!("Perform final reduction");
 
     let mut u = [0u32; 64];
     let mut borrow = 0u32;
