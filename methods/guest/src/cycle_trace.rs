@@ -65,7 +65,7 @@ pub mod inner {
     }
 
     #[macro_export]
-    macro_rules! timer {
+    macro_rules! stop_start_timer {
         ($msg: expr) => {{
             end_timer!();
             start_timer!($msg);
@@ -91,7 +91,7 @@ pub mod inner {
         () => {{}};
     }
     #[macro_export]
-    macro_rules! timer {
+    macro_rules! stop_start_timer {
         ($msg: expr) => {{
             let _ = $msg;
         }};

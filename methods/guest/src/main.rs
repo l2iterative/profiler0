@@ -94,14 +94,14 @@ fn main() {
     let task = unsafe { task.assume_init() };
     /************************************************************/
 
-    timer!("Check the length");
+    stop_start_timer!("Check the length");
     // check the length
     assert_eq!(task.long_form_c.len(), 1204);
     assert_eq!(task.k.len(), 264);
     assert_eq!(task.long_form_kn.len(), 1204);
 
     /************************************************************/
-    timer!("Hash");
+    stop_start_timer!("Hash");
     // derive the challenge
     use sha2::{Digest, Sha256};
 
@@ -269,7 +269,7 @@ fn main() {
         add_small::<9, 8>(&mut az, &res);
     }
 
-    timer!("Compute the checksum for b");
+    stop_start_timer!("Compute the checksum for b");
     for i in 0..22 {
         let b_limbs = [
             b_ptr[i * 3],
@@ -294,7 +294,7 @@ fn main() {
         add_small::<9, 8>(&mut bz, &res);
     }
 
-    timer!("Compute the checksum for k");
+    stop_start_timer!("Compute the checksum for k");
     for i in 0..22 {
         let k_limbs = [
             k_ptr[i * 3],
@@ -320,7 +320,7 @@ fn main() {
         add_small::<9, 8>(&mut kz, &res);
     }
 
-    timer!("Compute the checksum for n");
+    stop_start_timer!("Compute the checksum for n");
     for i in 0..22 {
         let n_limbs = [
             n_ptr[i * 3],
@@ -376,7 +376,7 @@ fn main() {
         add_small::<9, 8>(&mut cz, &res);
     }
 
-    timer!("Compute the checksum for kn");
+    stop_start_timer!("Compute the checksum for kn");
     for i in 0..43 {
         let kn_limbs = [
             kn_ptr[i * 7],
@@ -428,7 +428,7 @@ fn main() {
         }
     }
 
-    timer!("Reduce b");
+    stop_start_timer!("Reduce b");
     let mut bz_reduce = bz.clone();
     while bz_reduce[8] != 0 {
         let reducer = [bz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -448,7 +448,7 @@ fn main() {
         }
     }
 
-    timer!("Reduce c");
+    stop_start_timer!("Reduce c");
     let mut cz_reduce = cz.clone();
     while cz_reduce[8] != 0 {
         let reducer = [cz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -468,7 +468,7 @@ fn main() {
         }
     }
 
-    timer!("Reduce k");
+    stop_start_timer!("Reduce k");
     let mut kz_reduce = kz.clone();
     while kz_reduce[8] != 0 {
         let reducer = [kz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -488,7 +488,7 @@ fn main() {
         }
     }
 
-    timer!("Reduce n");
+    stop_start_timer!("Reduce n");
     let mut nz_reduce = nz.clone();
     while nz_reduce[8] != 0 {
         let reducer = [nz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -508,7 +508,7 @@ fn main() {
         }
     }
 
-    timer!("Reduce kn");
+    stop_start_timer!("Reduce kn");
     let mut knz_reduce = knz.clone();
     while knz_reduce[8] != 0 {
         let reducer = [knz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -547,7 +547,7 @@ fn main() {
         );
     }
 
-    timer!("Compute k(z) * n(z)");
+    stop_start_timer!("Compute k(z) * n(z)");
     let mut kz_times_nz = [0u32; 8];
     unsafe {
         sys_bigint(
@@ -559,7 +559,7 @@ fn main() {
         );
     }
 
-    timer!("Compare a(z) * b(z) and k(z) * n(z)");
+    stop_start_timer!("Compare a(z) * b(z) and k(z) * n(z)");
 
     assert_eq!(az_times_bz, cz_reduce[0..8]);
     assert_eq!(kz_times_nz, knz_reduce[0..8]);
@@ -600,7 +600,7 @@ fn main() {
         c_reduce_limbs[i * 3 + 2] = cur_limb[2];
     }
 
-    timer!("Reduce k");
+    stop_start_timer!("Reduce k");
 
     let mut carry = [0u32; 5];
     for i in 0..43 {
