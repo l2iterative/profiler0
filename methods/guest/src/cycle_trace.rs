@@ -52,7 +52,7 @@ pub mod inner {
     }
 
     #[macro_export]
-    macro_rules! end_timer {
+    macro_rules! stop_timer {
         () => {{
             use $crate::cycle_trace::inner::TRACE_CYCLE_CHANNEL;
             extern "C" {
@@ -61,13 +61,22 @@ pub mod inner {
             unsafe {
                 TRACE_CYCLE_CHANNEL = sys_cycle_count() as u32;
             }
+
+            /* prevent compiler optimization */
+            unsafe {
+                core::arch::asm!(
+                    r#"
+                    nop
+                "#
+                );
+            }
         }};
     }
 
     #[macro_export]
     macro_rules! stop_start_timer {
         ($msg: expr) => {{
-            end_timer!();
+            stop_timer!();
             start_timer!($msg);
         }};
     }
@@ -87,7 +96,7 @@ pub mod inner {
     }
 
     #[macro_export]
-    macro_rules! end_timer {
+    macro_rules! stop_timer {
         () => {{}};
     }
     #[macro_export]

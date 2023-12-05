@@ -114,8 +114,8 @@ fn main() {
     hasher.update(&task.long_form_kn);
 
     let final_hash = hasher.finalize().to_vec();
-    end_timer!();
-    end_timer!();
+    stop_timer!();
+    stop_timer!();
     /************************************************************/
 
     const TEST_MODULUS: [u32; 8] = [
@@ -220,7 +220,7 @@ fn main() {
     }
 
     let z = unsafe { z.assume_init() };
-    end_timer!();
+    stop_timer!();
     /************************************************************/
 
     let mut az = [0u32; 9];
@@ -344,8 +344,8 @@ fn main() {
 
         add_small::<9, 8>(&mut nz, &res);
     }
-    end_timer!();
-    end_timer!();
+    stop_timer!();
+    stop_timer!();
     /************************************************************/
 
     /************************************************************/
@@ -401,8 +401,8 @@ fn main() {
 
         add_small::<9, 8>(&mut knz, &res);
     }
-    end_timer!();
-    end_timer!();
+    stop_timer!();
+    stop_timer!();
     /************************************************************/
 
     /************************************************************/
@@ -528,8 +528,8 @@ fn main() {
         }
     }
 
-    end_timer!();
-    end_timer!();
+    stop_timer!();
+    stop_timer!();
     /************************************************************/
 
     /************************************************************/
@@ -559,12 +559,14 @@ fn main() {
         );
     }
 
-    stop_start_timer!("Compare a(z) * b(z) and k(z) * n(z)");
-
+    stop_start_timer!("Compare a(z) * b(z) and c(z)");
     assert_eq!(az_times_bz, cz_reduce[0..8]);
+
+    stop_start_timer!("Compare k(z) * n(z) and kn(z)");
     assert_eq!(kz_times_nz, knz_reduce[0..8]);
-    end_timer!();
-    end_timer!();
+
+    stop_timer!();
+    stop_timer!();
     /************************************************************/
 
     /************************************************************/
@@ -627,14 +629,14 @@ fn main() {
         kn_reduce_limbs[i * 3 + 1] = cur_limb[1];
         kn_reduce_limbs[i * 3 + 2] = cur_limb[2];
     }
-    end_timer!();
-    end_timer!();
+    stop_timer!();
+    stop_timer!();
     /************************************************************/
 
     /************************************************************/
     start_timer!("Subtract kn from c");
     let borrow = sub_and_borrow::<129>(&mut c_reduce_limbs, &kn_reduce_limbs);
-    end_timer!();
+    stop_timer!();
     /************************************************************/
 
     let mut ok_flag = borrow == 0;
@@ -662,8 +664,8 @@ fn main() {
             c_reduce_limbs[i] = u[i];
         }
     }
-    end_timer!();
+    stop_timer!();
     /************************************************************/
 
-    end_timer!();
+    stop_timer!();
 }
