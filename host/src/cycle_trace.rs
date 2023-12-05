@@ -10,7 +10,6 @@ pub struct CycleTracer {
     pub pending_records: Vec<(String, usize, u32, u32)>,
     pub msg_channel_buffer: [u8; 516],
     pub msg_len_channel_buffer: u32,
-    pub have_incoming_msg: bool,
     pub num_instructions: u32,
     pub latest_cycle_count: u32,
 }
@@ -26,7 +25,6 @@ impl Default for CycleTracer {
             pending_records: vec![],
             msg_channel_buffer: [0u8; 516],
             msg_len_channel_buffer: 0,
-            have_incoming_msg: false,
             num_instructions: 0,
             latest_cycle_count: 0,
         }
@@ -124,33 +122,26 @@ impl CycleTracer {
                         ((value >> 24) & 0xff) as u8;
                 }
                 if addr == self.trace_msg_len_channel {
-                    self.msg_len_channel_buffer = value;
-                    self.have_incoming_msg = true;
+                    let str = String::from_utf8(
+                        self.msg_channel_buffer[0..value as usize]
+                            .to_vec(),
+                    )
+                        .unwrap();
+                    self.pending_records.push((
+                        str,
+                        self.pending_records.len(),
+                        self.num_instructions,
+                        self.latest_cycle_count,
+                    ));
                 }
                 if addr == self.trace_cycle_channel {
-                    if self.have_incoming_msg {
-                        let str = String::from_utf8(
-                            self.msg_channel_buffer[0..self.msg_len_channel_buffer as usize]
-                                .to_vec(),
-                        )
-                        .unwrap();
-                        self.pending_records.push((
-                            str,
-                            self.pending_records.len(),
-                            self.num_instructions,
-                            self.latest_cycle_count,
-                        ));
-                    } else {
-                        let elem = self.pending_records.pop().unwrap();
-                        self.finished_records.push((
-                            elem.0,
-                            elem.1,
-                            self.num_instructions - elem.2,
-                            self.latest_cycle_count - elem.3,
-                        ));
-                    }
-
-                    self.have_incoming_msg = false;
+                    let elem = self.pending_records.pop().unwrap();
+                    self.finished_records.push((
+                        elem.0,
+                        elem.1,
+                        self.num_instructions - elem.2,
+                        self.latest_cycle_count - elem.3, )
+                    );
                 }
             }
         }

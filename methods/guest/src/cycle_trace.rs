@@ -31,7 +31,7 @@ pub mod inner {
     macro_rules! start_timer {
         ($msg: expr) => {{
             use $crate::cycle_trace::inner::{
-                TRACE_SIGNAL_CHANNEL, TRACE_MSG_CHANNEL, TRACE_MSG_LEN_CHANNEL,
+                TRACE_MSG_CHANNEL, TRACE_MSG_LEN_CHANNEL,
             };
 
             unsafe {
@@ -48,7 +48,6 @@ pub mod inner {
                     "#
                 );
                 core::ptr::write_volatile((&mut TRACE_MSG_LEN_CHANNEL) as *mut u32, len as u32);
-                core::ptr::write_volatile((&mut TRACE_SIGNAL_CHANNEL) as *mut u32, 0u32);
             }
         }};
     }
