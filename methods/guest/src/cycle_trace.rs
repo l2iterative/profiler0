@@ -9,7 +9,7 @@ pub mod inner {
     #[no_mangle]
     pub static mut TRACE_MSG_LEN_CHANNEL: u32 = 0;
     #[no_mangle]
-    pub static mut TRACE_CYCLE_CHANNEL: u32 = 0;
+    pub static mut TRACE_SIGNAL_CHANNEL: u32 = 0;
 
     #[inline(always)]
     pub fn init_trace_logger() {
@@ -20,7 +20,7 @@ pub mod inner {
                 li x0, 0xCDCDCDCD
                 la x0, TRACE_MSG_CHANNEL
                 la x0, TRACE_MSG_LEN_CHANNEL
-                la x0, TRACE_CYCLE_CHANNEL
+                la x0, TRACE_SIGNAL_CHANNEL
                 nop
             "#
             );
@@ -31,12 +31,8 @@ pub mod inner {
     macro_rules! start_timer {
         ($msg: expr) => {{
             use $crate::cycle_trace::inner::{
-                TRACE_CYCLE_CHANNEL, TRACE_MSG_CHANNEL, TRACE_MSG_LEN_CHANNEL,
+                TRACE_SIGNAL_CHANNEL, TRACE_MSG_CHANNEL, TRACE_MSG_LEN_CHANNEL,
             };
-
-            extern "C" {
-                fn sys_cycle_count() -> usize;
-            }
 
             unsafe {
                 let len = $msg.len();
@@ -45,8 +41,14 @@ pub mod inner {
                     TRACE_MSG_CHANNEL.as_mut_ptr(),
                     (len + 3) / 4,
                 );
-                TRACE_MSG_LEN_CHANNEL = len as u32;
-                TRACE_CYCLE_CHANNEL = sys_cycle_count() as u32;
+                // prevent out-of-order execution
+                core::arch::asm!(
+                        r#"
+                        nop
+                    "#
+                );
+                core::ptr::write_volatile((&mut TRACE_MSG_LEN_CHANNEL) as *mut u32, len as u32);
+                core::ptr::write_volatile((&mut TRACE_SIGNAL_CHANNEL) as *mut u32, 0u32);
             }
         }};
     }
@@ -54,21 +56,9 @@ pub mod inner {
     #[macro_export]
     macro_rules! stop_timer {
         () => {{
-            use $crate::cycle_trace::inner::TRACE_CYCLE_CHANNEL;
-            extern "C" {
-                fn sys_cycle_count() -> usize;
-            }
+            use $crate::cycle_trace::inner::TRACE_SIGNAL_CHANNEL;
             unsafe {
-                TRACE_CYCLE_CHANNEL = sys_cycle_count() as u32;
-            }
-
-            /* prevent compiler optimization */
-            unsafe {
-                core::arch::asm!(
-                    r#"
-                    nop
-                "#
-                );
+                core::ptr::write_volatile((&mut TRACE_SIGNAL_CHANNEL) as *mut u32, 1u32);
             }
         }};
     }

@@ -6,12 +6,14 @@ pub struct CycleTracer {
     pub trace_msg_channel: u32,
     pub trace_msg_len_channel: u32,
     pub trace_cycle_channel: u32,
-    pub finished_records: Vec<(String, usize, u32)>,
-    pub pending_records: Vec<(String, usize, u32)>,
+    pub finished_records: Vec<(String, usize, u32, u32)>,
+    pub pending_records: Vec<(String, usize, u32, u32)>,
     pub msg_channel_buffer: [u8; 516],
     pub msg_len_channel_buffer: u32,
     pub cycle_channel_buffer: u32,
     pub have_incoming_msg: bool,
+    pub num_instructions: u32,
+    pub latest_cycle_count: u32,
 }
 
 impl Default for CycleTracer {
@@ -27,6 +29,8 @@ impl Default for CycleTracer {
             msg_len_channel_buffer: 0,
             cycle_channel_buffer: 0,
             have_incoming_msg: false,
+            num_instructions: 0,
+            latest_cycle_count: 0,
         }
     }
 }
@@ -34,7 +38,10 @@ impl Default for CycleTracer {
 impl CycleTracer {
     pub fn handle_event(&mut self, event: TraceEvent) {
         match event {
-            TraceEvent::InstructionStart { cycle: _, pc, insn } => {
+            TraceEvent::InstructionStart { cycle, pc, insn } => {
+                self.latest_cycle_count = cycle;
+                self.num_instructions += 1;
+
                 if self.init_state_machine == 999 {
                     return;
                 }
@@ -123,8 +130,6 @@ impl CycleTracer {
                     self.have_incoming_msg = true;
                 }
                 if addr == self.trace_cycle_channel {
-                    self.cycle_channel_buffer = value;
-
                     if self.have_incoming_msg {
                         let str = String::from_utf8(
                             self.msg_channel_buffer[0..self.msg_len_channel_buffer as usize]
@@ -134,14 +139,16 @@ impl CycleTracer {
                         self.pending_records.push((
                             str,
                             self.pending_records.len(),
-                            self.cycle_channel_buffer,
+                            self.num_instructions,
+                            self.latest_cycle_count,
                         ));
                     } else {
                         let elem = self.pending_records.pop().unwrap();
                         self.finished_records.push((
                             elem.0,
                             elem.1,
-                            self.cycle_channel_buffer - elem.2,
+                            self.num_instructions - elem.2,
+                            self.latest_cycle_count - elem.3,
                         ));
                     }
 
@@ -170,7 +177,13 @@ impl CycleTracer {
             if report.1 >= cur_level {
                 cur_level = report.1;
                 let mut cur_string = output.get(&cur_level).cloned().unwrap_or_default();
-                cur_string += &format!("{}{}: {}\n", compute_indent(cur_level), report.0, report.2);
+                cur_string += &format!(
+                    "{}{}: {} cycles, {} instructions\n",
+                    compute_indent(cur_level),
+                    report.0,
+                    report.3,
+                    report.2
+                );
                 output.insert(cur_level, cur_string);
             } else if report.1 < cur_level {
                 let tmp_string = output.get(&cur_level).cloned().unwrap_or_default();
@@ -180,9 +193,10 @@ impl CycleTracer {
 
                 let mut cur_string = output.get(&cur_level).cloned().unwrap_or_default();
                 cur_string += &format!(
-                    "{}{}: {}\n{}",
+                    "{}{}: {} cycles, {} instructions \n{}",
                     compute_indent(cur_level),
                     report.0,
+                    report.3,
                     report.2,
                     tmp_string
                 );
