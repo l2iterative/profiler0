@@ -2,7 +2,7 @@ use core::mem::{transmute, MaybeUninit};
 use risc0_zkvm::guest::env;
 risc0_zkvm::guest::entry!(main);
 
-mod perf_trace;
+mod cycle_trace;
 
 pub(crate) const BIGINT_WIDTH_WORDS: usize = 8;
 const OP_MULTIPLY: u32 = 0;
@@ -75,8 +75,13 @@ pub fn sub_and_borrow<const I: usize>(accu: &mut [u32; I], new: &[u32; I]) -> u3
 }
 
 fn main() {
+    cycle_trace::init_trace_logger();
+    start_timer!("Total");
+
     /************************************************************/
-    let timer = start_timer!("Loading data");
+    start_timer!("Load data");
+
+    start_timer!("Read from the host");
     // read the task and the witness from the host
     let mut task = MaybeUninit::<Task>::uninit();
     unsafe {
@@ -87,16 +92,16 @@ fn main() {
         env::read_slice(&mut (*task.as_mut_ptr()).long_form_kn);
     }
     let task = unsafe { task.assume_init() };
-    end_timer!(timer);
     /************************************************************/
 
+    timer!("Check the length");
     // check the length
     assert_eq!(task.long_form_c.len(), 1204);
     assert_eq!(task.k.len(), 264);
     assert_eq!(task.long_form_kn.len(), 1204);
 
     /************************************************************/
-    let timer = start_timer!("Hashing");
+    timer!("Hash");
     // derive the challenge
     use sha2::{Digest, Sha256};
 
@@ -109,7 +114,8 @@ fn main() {
     hasher.update(&task.long_form_kn);
 
     let final_hash = hasher.finalize().to_vec();
-    end_timer!(timer);
+    end_timer!();
+    end_timer!();
     /************************************************************/
 
     const TEST_MODULUS: [u32; 8] = [
@@ -193,7 +199,7 @@ fn main() {
     ];
 
     /************************************************************/
-    let timer = start_timer!("Compute z");
+    start_timer!("Compute z");
 
     let mut z = MaybeUninit::<[[u32; 8]; 43]>::uninit();
     unsafe {
@@ -214,7 +220,7 @@ fn main() {
     }
 
     let z = unsafe { z.assume_init() };
-    end_timer!(timer);
+    end_timer!();
     /************************************************************/
 
     let mut az = [0u32; 9];
@@ -234,11 +240,11 @@ fn main() {
     let kn_ptr = unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_kn[0]) };
 
     /************************************************************/
-    let timer = start_timer!("Compute the checksum for a, b, k, n");
+    start_timer!("Compute the checksum for a, b, k, n");
 
     let mut res = [0u32; 8];
 
-    let sub_timer = start_timer!("Compute the checksum for a");
+    start_timer!("Compute the checksum for a");
     for i in 0..22 {
         let a_limbs = [
             a_ptr[i * 3],
@@ -262,9 +268,8 @@ fn main() {
         }
         add_small::<9, 8>(&mut az, &res);
     }
-    end_timer!(sub_timer);
 
-    let sub_timer = start_timer!("Compute the checksum for b");
+    timer!("Compute the checksum for b");
     for i in 0..22 {
         let b_limbs = [
             b_ptr[i * 3],
@@ -288,9 +293,8 @@ fn main() {
 
         add_small::<9, 8>(&mut bz, &res);
     }
-    end_timer!(sub_timer);
 
-    let sub_timer = start_timer!("Compute the checksum for k");
+    timer!("Compute the checksum for k");
     for i in 0..22 {
         let k_limbs = [
             k_ptr[i * 3],
@@ -315,9 +319,8 @@ fn main() {
 
         add_small::<9, 8>(&mut kz, &res);
     }
-    end_timer!(sub_timer);
 
-    let sub_timer = start_timer!("Compute the checksum for n");
+    timer!("Compute the checksum for n");
     for i in 0..22 {
         let n_limbs = [
             n_ptr[i * 3],
@@ -341,14 +344,14 @@ fn main() {
 
         add_small::<9, 8>(&mut nz, &res);
     }
-    end_timer!(sub_timer);
-    end_timer!(timer);
+    end_timer!();
+    end_timer!();
     /************************************************************/
 
     /************************************************************/
-    let timer = start_timer!("Compute the checksum for c, kn");
+    start_timer!("Compute the checksum for c, kn");
 
-    let sub_timer = start_timer!("Compute the checksum for c");
+    start_timer!("Compute the checksum for c");
     for i in 0..43 {
         let c_limbs = [
             c_ptr[i * 7],
@@ -372,9 +375,8 @@ fn main() {
 
         add_small::<9, 8>(&mut cz, &res);
     }
-    end_timer!(sub_timer);
 
-    let sub_timer = start_timer!("Compute the checksum for kn");
+    timer!("Compute the checksum for kn");
     for i in 0..43 {
         let kn_limbs = [
             kn_ptr[i * 7],
@@ -399,13 +401,14 @@ fn main() {
 
         add_small::<9, 8>(&mut knz, &res);
     }
-    end_timer!(sub_timer);
-    end_timer!(timer);
+    end_timer!();
+    end_timer!();
     /************************************************************/
 
-    let count_before_reduce_a_b_c_k_n_kn = env::get_cycle_count();
+    /************************************************************/
+    start_timer!("Reduce a, b, c, k, n, kn");
 
-    // try reduce
+    start_timer!("Reduce a");
     let mut az_reduce = az.clone();
     while az_reduce[8] != 0 {
         let reducer = [az_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -425,6 +428,7 @@ fn main() {
         }
     }
 
+    timer!("Reduce b");
     let mut bz_reduce = bz.clone();
     while bz_reduce[8] != 0 {
         let reducer = [bz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -444,6 +448,7 @@ fn main() {
         }
     }
 
+    timer!("Reduce c");
     let mut cz_reduce = cz.clone();
     while cz_reduce[8] != 0 {
         let reducer = [cz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -463,6 +468,7 @@ fn main() {
         }
     }
 
+    timer!("Reduce k");
     let mut kz_reduce = kz.clone();
     while kz_reduce[8] != 0 {
         let reducer = [kz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -477,11 +483,12 @@ fn main() {
                 &TEST_MODULUS,
             );
         }
-        unsafe{
+        unsafe {
             add_small::<9, 2>(&mut kz_reduce, &transmute::<&[u32; 8], &[u32; 2]>(&res));
         }
     }
 
+    timer!("Reduce n");
     let mut nz_reduce = nz.clone();
     while nz_reduce[8] != 0 {
         let reducer = [nz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -501,6 +508,7 @@ fn main() {
         }
     }
 
+    timer!("Reduce kn");
     let mut knz_reduce = knz.clone();
     while knz_reduce[8] != 0 {
         let reducer = [knz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
@@ -520,9 +528,14 @@ fn main() {
         }
     }
 
-    let count_after_reduce_a_b_c_k_n_kn = env::get_cycle_count();
+    end_timer!();
+    end_timer!();
+    /************************************************************/
 
-    let count_before_az_bz_kz_nz = env::get_cycle_count();
+    /************************************************************/
+    start_timer!("Compute a(z) * b(z), k(z) * n(z)");
+
+    start_timer!("Compute a(z) * b(z)");
     let mut az_times_bz = [0u32; 8];
     unsafe {
         sys_bigint(
@@ -534,6 +547,7 @@ fn main() {
         );
     }
 
+    timer!("Compute k(z) * n(z)");
     let mut kz_times_nz = [0u32; 8];
     unsafe {
         sys_bigint(
@@ -545,15 +559,21 @@ fn main() {
         );
     }
 
+    timer!("Compare a(z) * b(z) and k(z) * n(z)");
+
     assert_eq!(az_times_bz, cz_reduce[0..8]);
     assert_eq!(kz_times_nz, knz_reduce[0..8]);
-    let count_after_az_bz_kz_nz = env::get_cycle_count();
+    end_timer!();
+    end_timer!();
+    /************************************************************/
 
-    let count_before_reduce_c_kn = env::get_cycle_count();
+    /************************************************************/
+    start_timer!("Reduce c and kn");
 
     let mut c_reduce_limbs = [0u32; 129];
     let mut kn_reduce_limbs = [0u32; 129];
 
+    start_timer!("Reduce c");
     let mut carry = [0u32; 5];
     for i in 0..43 {
         let mut cur_limb = [
@@ -580,6 +600,8 @@ fn main() {
         c_reduce_limbs[i * 3 + 2] = cur_limb[2];
     }
 
+    timer!("Reduce k");
+
     let mut carry = [0u32; 5];
     for i in 0..43 {
         let mut cur_limb = [
@@ -605,14 +627,15 @@ fn main() {
         kn_reduce_limbs[i * 3 + 1] = cur_limb[1];
         kn_reduce_limbs[i * 3 + 2] = cur_limb[2];
     }
+    end_timer!();
+    end_timer!();
+    /************************************************************/
 
-    let count_after_reduce_c_kn = env::get_cycle_count();
-
-    let count_before_c_minus_kn = env::get_cycle_count();
-
+    /************************************************************/
+    start_timer!("Subtract kn from c");
     let borrow = sub_and_borrow::<129>(&mut c_reduce_limbs, &kn_reduce_limbs);
-
-    let count_after_c_minus_kn = env::get_cycle_count();
+    end_timer!();
+    /************************************************************/
 
     let mut ok_flag = borrow == 0;
     for i in 64..129 {
@@ -620,7 +643,8 @@ fn main() {
     }
     assert!(ok_flag);
 
-    let count_before_final_reduction = env::get_cycle_count();
+    /************************************************************/
+    start_timer!("Perform final reduction");
 
     let mut u = [0u32; 64];
     let mut borrow = 0u32;
@@ -638,38 +662,8 @@ fn main() {
             c_reduce_limbs[i] = u[i];
         }
     }
+    end_timer!();
+    /************************************************************/
 
-    let count_after_final_reduction = env::get_cycle_count();
-
-    let overall = env::get_cycle_count();
-
-    println!("total cycle = {}", overall);
-    println!(
-        "reducing az, bz, cz, kz, nz, knz = {}",
-        count_after_reduce_a_b_c_k_n_kn - count_before_reduce_a_b_c_k_n_kn
-    );
-    println!(
-        "az * bz, kz * nz = {}",
-        count_after_az_bz_kz_nz - count_before_az_bz_kz_nz
-    );
-    println!(
-        "reducing c and kn = {}",
-        count_after_reduce_c_kn - count_before_reduce_c_kn
-    );
-    println!(
-        "computing c - kn = {}",
-        count_after_c_minus_kn - count_before_c_minus_kn
-    );
-    println!(
-        "final reduction = {}",
-        count_after_final_reduction - count_before_final_reduction
-    );
-
-    use num_bigint::BigUint;
-    println!(
-        "res = {}",
-        BigUint::from_slice(&c_reduce_limbs[0..64]).to_string()
-    );
-
-    perf_trace::print_trace();
+    end_timer!();
 }
