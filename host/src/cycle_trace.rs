@@ -1,17 +1,35 @@
 use risc0_zkvm::TraceEvent;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeSet};
+
+pub struct FinishedRecord {
+    pub name: String,
+    pub indents: usize,
+    pub num_instructions: u32,
+    pub num_cycles: u32,
+    pub num_page_loaded: u32,
+}
+
+pub struct PendingRecord {
+    pub name: String,
+    pub num_pending_records: usize,
+    pub cur_num_instructions: u32,
+    pub cur_num_cycles: u32,
+    pub cur_num_page_loaded: u32,
+}
 
 pub struct CycleTracer {
     pub init_state_machine: u32,
     pub trace_msg_channel: u32,
     pub trace_msg_len_channel: u32,
     pub trace_cycle_channel: u32,
-    pub finished_records: Vec<(String, usize, u32, u32)>,
-    pub pending_records: Vec<(String, usize, u32, u32)>,
+    pub finished_records: Vec<FinishedRecord>,
+    pub pending_records: Vec<PendingRecord>,
     pub msg_channel_buffer: [u8; 516],
     pub msg_len_channel_buffer: u32,
     pub num_instructions: u32,
     pub latest_cycle_count: u32,
+    pub num_loaded_pages: u32,
+    pub page_load_triggers: BTreeSet<u32>,
 }
 
 impl Default for CycleTracer {
@@ -27,6 +45,8 @@ impl Default for CycleTracer {
             msg_len_channel_buffer: 0,
             num_instructions: 0,
             latest_cycle_count: 0,
+            num_loaded_pages: 0,
+            page_load_triggers: BTreeSet::new(),
         }
     }
 }
@@ -35,6 +55,11 @@ impl CycleTracer {
     pub fn handle_event(&mut self, event: TraceEvent) {
         match event {
             TraceEvent::InstructionStart { cycle, pc, insn } => {
+                if cycle - self.latest_cycle_count >= 1094 {
+                    self.num_loaded_pages += (cycle - self.latest_cycle_count) / 1094;
+                    self.page_load_triggers.insert(pc);
+                }
+
                 self.latest_cycle_count = cycle;
                 self.num_instructions += 1;
 
@@ -127,21 +152,23 @@ impl CycleTracer {
                             .to_vec(),
                     )
                         .unwrap();
-                    self.pending_records.push((
-                        str,
-                        self.pending_records.len(),
-                        self.num_instructions,
-                        self.latest_cycle_count,
-                    ));
+                    self.pending_records.push(PendingRecord {
+                        name: str,
+                        num_pending_records: self.pending_records.len(),
+                        cur_num_instructions: self.num_instructions,
+                        cur_num_cycles: self.latest_cycle_count,
+                        cur_num_page_loaded: self.num_loaded_pages,
+                    });
                 }
                 if addr == self.trace_cycle_channel {
                     let elem = self.pending_records.pop().unwrap();
-                    self.finished_records.push((
-                        elem.0,
-                        elem.1,
-                        self.num_instructions - elem.2,
-                        self.latest_cycle_count - elem.3, )
-                    );
+                    self.finished_records.push(FinishedRecord {
+                        name: elem.name,
+                        indents: elem.num_pending_records,
+                        num_instructions: self.num_instructions - elem.cur_num_instructions,
+                        num_cycles: self.latest_cycle_count - elem.cur_num_cycles,
+                        num_page_loaded: self.num_loaded_pages - elem.cur_num_page_loaded,
+                    });
                 }
             }
         }
@@ -163,30 +190,32 @@ impl CycleTracer {
         let mut cur_level = 0;
 
         for report in self.finished_records.iter() {
-            if report.1 >= cur_level {
-                cur_level = report.1;
+            if report.indents >= cur_level {
+                cur_level = report.indents;
                 let mut cur_string = output.get(&cur_level).cloned().unwrap_or_default();
                 cur_string += &format!(
-                    "{}{}: {} cycles, {} instructions\n",
+                    "{}{}: {} cycles, {} instructions, {} page loads\n",
                     compute_indent(cur_level),
-                    report.0,
-                    report.3,
-                    report.2
+                    report.name,
+                    report.num_cycles,
+                    report.num_instructions,
+                    report.num_page_loaded,
                 );
                 output.insert(cur_level, cur_string);
-            } else if report.1 < cur_level {
+            } else if report.indents < cur_level {
                 let tmp_string = output.get(&cur_level).cloned().unwrap_or_default();
                 output.insert(cur_level, "".to_string());
 
-                cur_level = report.1;
+                cur_level = report.indents;
 
                 let mut cur_string = output.get(&cur_level).cloned().unwrap_or_default();
                 cur_string += &format!(
-                    "{}{}: {} cycles, {} instructions \n{}",
+                    "{}{}: {} cycles, {} instructions, {} page loads \n{}",
                     compute_indent(cur_level),
-                    report.0,
-                    report.3,
-                    report.2,
+                    report.name,
+                    report.num_cycles,
+                    report.num_instructions,
+                    report.num_page_loaded,
                     tmp_string
                 );
                 output.insert(cur_level, cur_string);
@@ -194,5 +223,16 @@ impl CycleTracer {
         }
 
         println!("{}", output.get(&0).cloned().unwrap_or_default());
+    }
+
+    #[allow(unused)]
+    pub fn print_page_in_triggers(&self) {
+        println!("PCs of the instructions that trigger page-in:");
+        let entries =  self.page_load_triggers.iter().
+            map(|x| format!("0x{:#08x}", x)).
+            collect::<Vec<String>>();
+        for group in entries.chunks(4) {
+            println!("{}", group.join(", "));
+        }
     }
 }

@@ -7,6 +7,86 @@ mod cycle_trace;
 pub(crate) const BIGINT_WIDTH_WORDS: usize = 8;
 const OP_MULTIPLY: u32 = 0;
 
+const TEST_MODULUS: [u32; 8] = [
+    4294967107u32,
+    4294967295u32,
+    4294967295u32,
+    4294967295u32,
+    4294967295u32,
+    4294967295u32,
+    4294967295u32,
+    4294967295u32,
+];
+
+const N_LIMBS: [u32; 66] = [
+    3493812455u32,
+    3529997461u32,
+    710143587u32,
+    2792692495u32,
+    1885047707u32,
+    3553628773u32,
+    2204079629u32,
+    699911535u32,
+    3275286756u32,
+    2670964040u32,
+    380836659u32,
+    1539088076u32,
+    257233178u32,
+    102057303u32,
+    3498423094u32,
+    347591143u32,
+    118634769u32,
+    2922120165u32,
+    4044052678u32,
+    3306267357u32,
+    3299705609u32,
+    2232715160u32,
+    2567218027u32,
+    57867452u32,
+    3266166781u32,
+    2351768864u32,
+    296981719u32,
+    1570354344u32,
+    4098249795u32,
+    2000361393u32,
+    1479034620u32,
+    3336008768u32,
+    2938032753u32,
+    3528598023u32,
+    1304193507u32,
+    121827407u32,
+    514584826u32,
+    1603753032u32,
+    1664712145u32,
+    3527467765u32,
+    2821704060u32,
+    729040642u32,
+    2110748820u32,
+    3709644666u32,
+    4149792411u32,
+    1565350608u32,
+    3206857463u32,
+    792901230u32,
+    3569404149u32,
+    1620994961u32,
+    33783729u32,
+    1281610576u32,
+    468794176u32,
+    1193160222u32,
+    3636051391u32,
+    2450661453u32,
+    4242348214u32,
+    2150858390u32,
+    1813504491u32,
+    305305593u32,
+    1673370015u32,
+    1864962247u32,
+    2629885700u32,
+    2947918631u32,
+    0u32,
+    0u32,
+];
+
 extern "C" {
     fn sys_bigint(
         result: *mut [u32; BIGINT_WIDTH_WORDS],
@@ -17,12 +97,12 @@ extern "C" {
     );
 }
 
-#[inline(always)]
+#[inline]
 pub fn add32_and_overflow(a: u32, b: u32, carry: u32) -> (u32, u32) {
     let v = (a as u64).wrapping_add(b as u64).wrapping_add(carry as u64);
     ((v >> 32) as u32, (v & 0xffffffff) as u32)
 }
-#[inline(always)]
+#[inline]
 pub fn add_small<const I: usize, const J: usize>(accm: &mut [u32; I], new: &[u32; J]) {
     let mut carry = 0;
     (carry, accm[0]) = add32_and_overflow(accm[0], new[0], carry);
@@ -50,7 +130,7 @@ pub struct Task {
     pub long_form_kn: [u8; 1204],
 }
 
-#[inline(always)]
+#[inline]
 pub fn sub_with_borrow(a: u32, b: u32, carry: u32) -> (u32, u32) {
     let res = ((a as u64).wrapping_add(0x100000000))
         .wrapping_sub(b as u64)
@@ -61,7 +141,7 @@ pub fn sub_with_borrow(a: u32, b: u32, carry: u32) -> (u32, u32) {
     )
 }
 
-#[inline(always)]
+#[inline]
 pub fn sub_and_borrow<const I: usize>(accu: &mut [u32; I], new: &[u32; I]) -> u32 {
     let (cur, borrow) = accu[0].overflowing_sub(new[0]);
     accu[0] = cur;
@@ -74,13 +154,112 @@ pub fn sub_and_borrow<const I: usize>(accu: &mut [u32; I], new: &[u32; I]) -> u3
     borrow
 }
 
+fn compute_checksum_small_and_reduce(ptr: &[u32; 66], z: &[[u32; 8]; 43]) -> [u32; 8] {
+    let mut res = [0u32; 8];
+    let mut checksum = [0u32; 9];
+
+    for i in 0..22 {
+        let tmp_limbs = [
+            ptr[i * 3],
+            ptr[i * 3 + 1],
+            ptr[i * 3 + 2],
+            0u32,
+            0,
+            0,
+            0,
+            0,
+        ];
+
+        unsafe {
+            sys_bigint(
+                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
+                OP_MULTIPLY,
+                &tmp_limbs as *const [u32; BIGINT_WIDTH_WORDS],
+                &z[i] as *const [u32; BIGINT_WIDTH_WORDS],
+                &TEST_MODULUS,
+            );
+        }
+        add_small::<9, 8>(&mut checksum, &res);
+    }
+    while checksum[8] != 0 {
+        let reducer = [checksum[8], 0, 0, 0, 0, 0, 0, 0];
+        checksum[8] = 0;
+
+        unsafe {
+            sys_bigint(
+                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
+                OP_MULTIPLY,
+                &reducer as *const [u32; BIGINT_WIDTH_WORDS],
+                &[189u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32],
+                &TEST_MODULUS,
+            );
+        }
+        unsafe {
+            add_small::<9, 2>(&mut checksum, &transmute::<&[u32; 8], &[u32; 2]>(&res));
+        }
+    }
+
+    let mut res = [0u32; 8];
+    res.copy_from_slice(&checksum[0..8]);
+    res
+}
+
+fn compute_checksum_long_and_reduce(ptr: &[u32; 301], z: &[[u32; 8]; 43]) -> [u32; 8] {
+    let mut res = [0u32; 8];
+    let mut checksum = [0u32; 9];
+
+    for i in 0..43 {
+        let tmp_limbs = [
+            ptr[i * 7],
+            ptr[i * 7 + 1],
+            ptr[i * 7 + 2],
+            ptr[i * 7 + 3],
+            ptr[i * 7 + 4],
+            ptr[i * 7 + 5],
+            ptr[i * 7 + 6],
+            0,
+        ];
+
+        unsafe {
+            sys_bigint(
+                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
+                OP_MULTIPLY,
+                &tmp_limbs as *const [u32; BIGINT_WIDTH_WORDS],
+                &z[i] as *const [u32; BIGINT_WIDTH_WORDS],
+                &TEST_MODULUS,
+            );
+        }
+        add_small::<9, 8>(&mut checksum, &res);
+    }
+    while checksum[8] != 0 {
+        let reducer = [checksum[8], 0, 0, 0, 0, 0, 0, 0];
+        checksum[8] = 0;
+
+        unsafe {
+            sys_bigint(
+                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
+                OP_MULTIPLY,
+                &reducer as *const [u32; BIGINT_WIDTH_WORDS],
+                &[189u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32],
+                &TEST_MODULUS,
+            );
+        }
+        unsafe {
+            add_small::<9, 2>(&mut checksum, &transmute::<&[u32; 8], &[u32; 2]>(&res));
+        }
+    }
+
+    let mut res = [0u32; 8];
+    res.copy_from_slice(&checksum[0..8]);
+    res
+}
+
 fn main() {
     cycle_trace::init_trace_logger();
     start_timer!("Total");
 
     /************************************************************/
     start_timer!("Load data");
-
     start_timer!("Read from the host");
     // read the task and the witness from the host
     let mut task = MaybeUninit::<Task>::uninit();
@@ -118,89 +297,8 @@ fn main() {
     stop_timer!();
     /************************************************************/
 
-    const TEST_MODULUS: [u32; 8] = [
-        4294967107u32,
-        4294967295u32,
-        4294967295u32,
-        4294967295u32,
-        4294967295u32,
-        4294967295u32,
-        4294967295u32,
-        4294967295u32,
-    ];
-
-    const N_LIMBS: [u32; 66] = [
-        3493812455u32,
-        3529997461u32,
-        710143587u32,
-        2792692495u32,
-        1885047707u32,
-        3553628773u32,
-        2204079629u32,
-        699911535u32,
-        3275286756u32,
-        2670964040u32,
-        380836659u32,
-        1539088076u32,
-        257233178u32,
-        102057303u32,
-        3498423094u32,
-        347591143u32,
-        118634769u32,
-        2922120165u32,
-        4044052678u32,
-        3306267357u32,
-        3299705609u32,
-        2232715160u32,
-        2567218027u32,
-        57867452u32,
-        3266166781u32,
-        2351768864u32,
-        296981719u32,
-        1570354344u32,
-        4098249795u32,
-        2000361393u32,
-        1479034620u32,
-        3336008768u32,
-        2938032753u32,
-        3528598023u32,
-        1304193507u32,
-        121827407u32,
-        514584826u32,
-        1603753032u32,
-        1664712145u32,
-        3527467765u32,
-        2821704060u32,
-        729040642u32,
-        2110748820u32,
-        3709644666u32,
-        4149792411u32,
-        1565350608u32,
-        3206857463u32,
-        792901230u32,
-        3569404149u32,
-        1620994961u32,
-        33783729u32,
-        1281610576u32,
-        468794176u32,
-        1193160222u32,
-        3636051391u32,
-        2450661453u32,
-        4242348214u32,
-        2150858390u32,
-        1813504491u32,
-        305305593u32,
-        1673370015u32,
-        1864962247u32,
-        2629885700u32,
-        2947918631u32,
-        0u32,
-        0u32,
-    ];
-
     /************************************************************/
     start_timer!("Compute z");
-
     let mut z = MaybeUninit::<[[u32; 8]; 43]>::uninit();
     unsafe {
         (*z.as_mut_ptr())[0] = [1u32, 0, 0, 0, 0, 0, 0, 0];
@@ -223,326 +321,58 @@ fn main() {
     stop_timer!();
     /************************************************************/
 
-    let mut az = [0u32; 9];
-    let mut bz = [0u32; 9];
-    let mut kz = [0u32; 9];
-    let mut nz = [0u32; 9];
-
-    let mut cz = [0u32; 9];
-    let mut knz = [0u32; 9];
-
-    let a_ptr = unsafe { transmute::<&u8, &[u32; 66]>(&task.a[0]) };
-    let b_ptr = unsafe { transmute::<&u8, &[u32; 66]>(&task.b[0]) };
-    let k_ptr = unsafe { transmute::<&u8, &[u32; 66]>(&task.k[0]) };
-    let n_ptr = unsafe { transmute::<&u32, &[u32; 66]>(&N_LIMBS[0]) };
-
-    let c_ptr = unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_c[0]) };
-    let kn_ptr = unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_kn[0]) };
-
     /************************************************************/
-    start_timer!("Compute the checksum for a, b, k, n");
-
-    let mut res = [0u32; 8];
-
-    start_timer!("Compute the checksum for a");
-    for i in 0..22 {
-        let a_limbs = [
-            a_ptr[i * 3],
-            a_ptr[i * 3 + 1],
-            a_ptr[i * 3 + 2],
-            0u32,
-            0,
-            0,
-            0,
-            0,
-        ];
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &a_limbs as *const [u32; BIGINT_WIDTH_WORDS],
-                &z[i] as *const [u32; BIGINT_WIDTH_WORDS],
-                &TEST_MODULUS,
-            );
-        }
-        add_small::<9, 8>(&mut az, &res);
-    }
-
-    stop_start_timer!("Compute the checksum for b");
-    for i in 0..22 {
-        let b_limbs = [
-            b_ptr[i * 3],
-            b_ptr[i * 3 + 1],
-            b_ptr[i * 3 + 2],
-            0u32,
-            0,
-            0,
-            0,
-            0,
-        ];
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &b_limbs as *const [u32; BIGINT_WIDTH_WORDS],
-                &z[i] as *const [u32; BIGINT_WIDTH_WORDS],
-                &TEST_MODULUS,
-            );
-        }
-
-        add_small::<9, 8>(&mut bz, &res);
-    }
-
-    stop_start_timer!("Compute the checksum for k");
-    for i in 0..22 {
-        let k_limbs = [
-            k_ptr[i * 3],
-            k_ptr[i * 3 + 1],
-            k_ptr[i * 3 + 2],
-            0u32,
-            0,
-            0,
-            0,
-            0,
-        ];
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &k_limbs as *const [u32; BIGINT_WIDTH_WORDS],
-                &z[i] as *const [u32; BIGINT_WIDTH_WORDS],
-                &TEST_MODULUS,
-            );
-        }
-
-        add_small::<9, 8>(&mut kz, &res);
-    }
-
-    stop_start_timer!("Compute the checksum for n");
-    for i in 0..22 {
-        let n_limbs = [
-            n_ptr[i * 3],
-            n_ptr[i * 3 + 1],
-            n_ptr[i * 3 + 2],
-            0u32,
-            0,
-            0,
-            0,
-            0,
-        ];
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &n_limbs as *const [u32; BIGINT_WIDTH_WORDS],
-                &z[i] as *const [u32; BIGINT_WIDTH_WORDS],
-                &TEST_MODULUS,
-            );
-        }
-
-        add_small::<9, 8>(&mut nz, &res);
-    }
+    start_timer!("Compute and reduce the checksum for a, b, k, n");
+    start_timer!("Compute and reduce the checksum for a");
+    let az_reduce = compute_checksum_small_and_reduce(
+        unsafe { transmute::<&u8, &[u32; 66]>(&task.a[0]) },
+        &z,
+    );
+    stop_start_timer!("Compute and reduce the checksum for b");
+    let bz_reduce = compute_checksum_small_and_reduce(
+        unsafe { transmute::<&u8, &[u32; 66]>(&task.b[0]) },
+        &z,
+    );
+    stop_start_timer!("Compute and reduce the checksum for k");
+    let kz_reduce = compute_checksum_small_and_reduce(
+        unsafe { transmute::<&u8, &[u32; 66]>(&task.k[0]) },
+        &z,
+    );
+    stop_start_timer!("Compute and reduce the checksum for n");
+    let nz_reduce = compute_checksum_small_and_reduce(
+        unsafe { transmute::<&u32, &[u32; 66]>(&N_LIMBS[0]) },
+        &z,
+    );
     stop_timer!();
     stop_timer!();
     /************************************************************/
 
     /************************************************************/
-    start_timer!("Compute the checksum for c, kn");
-
-    start_timer!("Compute the checksum for c");
-    for i in 0..43 {
-        let c_limbs = [
-            c_ptr[i * 7],
-            c_ptr[i * 7 + 1],
-            c_ptr[i * 7 + 2],
-            c_ptr[i * 7 + 3],
-            c_ptr[i * 7 + 4],
-            c_ptr[i * 7 + 5],
-            c_ptr[i * 7 + 6],
-            0,
-        ];
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &c_limbs as *const [u32; BIGINT_WIDTH_WORDS],
-                &z[i] as *const [u32; BIGINT_WIDTH_WORDS],
-                &TEST_MODULUS,
-            );
-        }
-
-        add_small::<9, 8>(&mut cz, &res);
-    }
-
-    stop_start_timer!("Compute the checksum for kn");
-    for i in 0..43 {
-        let kn_limbs = [
-            kn_ptr[i * 7],
-            kn_ptr[i * 7 + 1],
-            kn_ptr[i * 7 + 2],
-            kn_ptr[i * 7 + 3],
-            kn_ptr[i * 7 + 4],
-            kn_ptr[i * 7 + 5],
-            kn_ptr[i * 7 + 6],
-            0,
-        ];
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &kn_limbs as *const [u32; BIGINT_WIDTH_WORDS],
-                &z[i] as *const [u32; BIGINT_WIDTH_WORDS],
-                &TEST_MODULUS,
-            );
-        }
-
-        add_small::<9, 8>(&mut knz, &res);
-    }
-    stop_timer!();
-    stop_timer!();
-    /************************************************************/
-
-    /************************************************************/
-    start_timer!("Reduce a, b, c, k, n, kn");
-
-    start_timer!("Reduce a");
-    let mut az_reduce = az.clone();
-    while az_reduce[8] != 0 {
-        let reducer = [az_reduce[8], 0, 0, 0, 0, 0, 0, 0];
-        az_reduce[8] = 0;
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &reducer as *const [u32; BIGINT_WIDTH_WORDS],
-                &[189u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32],
-                &TEST_MODULUS,
-            );
-        }
-        unsafe {
-            add_small::<9, 2>(&mut az_reduce, &transmute::<&[u32; 8], &[u32; 2]>(&res));
-        }
-    }
-
-    stop_start_timer!("Reduce b");
-    let mut bz_reduce = bz.clone();
-    while bz_reduce[8] != 0 {
-        let reducer = [bz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
-        bz_reduce[8] = 0;
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &reducer as *const [u32; BIGINT_WIDTH_WORDS],
-                &[189u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32],
-                &TEST_MODULUS,
-            );
-        }
-        unsafe {
-            add_small::<9, 2>(&mut bz_reduce, &transmute::<&[u32; 8], &[u32; 2]>(&res));
-        }
-    }
-
-    stop_start_timer!("Reduce c");
-    let mut cz_reduce = cz.clone();
-    while cz_reduce[8] != 0 {
-        let reducer = [cz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
-        cz_reduce[8] = 0;
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &reducer as *const [u32; BIGINT_WIDTH_WORDS],
-                &[189u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32],
-                &TEST_MODULUS,
-            );
-        }
-        unsafe {
-            add_small::<9, 2>(&mut cz_reduce, &transmute::<&[u32; 8], &[u32; 2]>(&res));
-        }
-    }
-
-    stop_start_timer!("Reduce k");
-    let mut kz_reduce = kz.clone();
-    while kz_reduce[8] != 0 {
-        let reducer = [kz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
-        kz_reduce[8] = 0;
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &reducer as *const [u32; BIGINT_WIDTH_WORDS],
-                &[189u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32],
-                &TEST_MODULUS,
-            );
-        }
-        unsafe {
-            add_small::<9, 2>(&mut kz_reduce, &transmute::<&[u32; 8], &[u32; 2]>(&res));
-        }
-    }
-
-    stop_start_timer!("Reduce n");
-    let mut nz_reduce = nz.clone();
-    while nz_reduce[8] != 0 {
-        let reducer = [nz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
-        nz_reduce[8] = 0;
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &reducer as *const [u32; BIGINT_WIDTH_WORDS],
-                &[189u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32],
-                &TEST_MODULUS,
-            );
-        }
-        unsafe {
-            add_small::<9, 2>(&mut nz_reduce, &transmute::<&[u32; 8], &[u32; 2]>(&res));
-        }
-    }
-
-    stop_start_timer!("Reduce kn");
-    let mut knz_reduce = knz.clone();
-    while knz_reduce[8] != 0 {
-        let reducer = [knz_reduce[8], 0, 0, 0, 0, 0, 0, 0];
-        knz_reduce[8] = 0;
-
-        unsafe {
-            sys_bigint(
-                &mut res as *mut [u32; BIGINT_WIDTH_WORDS],
-                OP_MULTIPLY,
-                &reducer as *const [u32; BIGINT_WIDTH_WORDS],
-                &[189u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32],
-                &TEST_MODULUS,
-            );
-        }
-        unsafe {
-            add_small::<9, 2>(&mut knz_reduce, &transmute::<&[u32; 8], &[u32; 2]>(&res));
-        }
-    }
-
+    start_timer!("Compute and reduce the checksum for c, kn");
+    start_timer!("Compute and reduce the checksum for c");
+    let cz_reduce = compute_checksum_long_and_reduce(
+        unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_c[0]) },
+        &z
+    );
+    stop_start_timer!("Compute and reduce the checksum for kn");
+    let knz_reduce = compute_checksum_long_and_reduce(
+        unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_kn[0]) },
+        &z
+    );
     stop_timer!();
     stop_timer!();
     /************************************************************/
 
     /************************************************************/
     start_timer!("Compute a(z) * b(z), k(z) * n(z)");
-
     start_timer!("Compute a(z) * b(z)");
     let mut az_times_bz = [0u32; 8];
     unsafe {
         sys_bigint(
             &mut az_times_bz as *mut [u32; BIGINT_WIDTH_WORDS],
             OP_MULTIPLY,
-            transmute::<&[u32; 9], &[u32; 8]>(&az_reduce) as *const [u32; BIGINT_WIDTH_WORDS],
-            transmute::<&[u32; 9], &[u32; 8]>(&bz_reduce) as *const [u32; BIGINT_WIDTH_WORDS],
+            &az_reduce as *const [u32; BIGINT_WIDTH_WORDS],
+            &bz_reduce as *const [u32; BIGINT_WIDTH_WORDS],
             &TEST_MODULUS,
         );
     }
@@ -553,8 +383,8 @@ fn main() {
         sys_bigint(
             &mut kz_times_nz as *mut [u32; BIGINT_WIDTH_WORDS],
             OP_MULTIPLY,
-            transmute::<&[u32; 9], &[u32; 8]>(&kz_reduce) as *const [u32; BIGINT_WIDTH_WORDS],
-            transmute::<&[u32; 9], &[u32; 8]>(&nz_reduce) as *const [u32; BIGINT_WIDTH_WORDS],
+            &kz_reduce as *const [u32; BIGINT_WIDTH_WORDS],
+            &nz_reduce as *const [u32; BIGINT_WIDTH_WORDS],
             &TEST_MODULUS,
         );
     }
@@ -574,6 +404,9 @@ fn main() {
 
     let mut c_reduce_limbs = [0u32; 129];
     let mut kn_reduce_limbs = [0u32; 129];
+
+    let c_ptr = unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_c[0]) };
+    let kn_ptr = unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_kn[0]) };
 
     start_timer!("Reduce c");
     let mut carry = [0u32; 5];
@@ -641,7 +474,6 @@ fn main() {
 
     /************************************************************/
     start_timer!("Perform final reduction");
-
     let mut ok_flag = borrow == 0;
     for i in 64..129 {
         ok_flag &= c_reduce_limbs[i] == 0;
