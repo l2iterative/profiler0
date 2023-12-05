@@ -30,9 +30,7 @@ pub mod inner {
     #[macro_export]
     macro_rules! start_timer {
         ($msg: expr) => {{
-            use $crate::cycle_trace::inner::{
-                TRACE_MSG_CHANNEL, TRACE_MSG_LEN_CHANNEL,
-            };
+            use $crate::cycle_trace::inner::{TRACE_MSG_CHANNEL, TRACE_MSG_LEN_CHANNEL};
 
             unsafe {
                 let len = $msg.len();
@@ -43,7 +41,7 @@ pub mod inner {
                 );
                 // prevent out-of-order execution
                 core::arch::asm!(
-                        r#"
+                    r#"
                         nop
                     "#
                 );
@@ -59,7 +57,7 @@ pub mod inner {
             unsafe {
                 core::ptr::write_volatile((&mut TRACE_SIGNAL_CHANNEL) as *mut u32, 0u32);
                 core::arch::asm!(
-                        r#"
+                    r#"
                         nop
                     "#
                 );

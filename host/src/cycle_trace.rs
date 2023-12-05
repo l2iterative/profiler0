@@ -1,5 +1,5 @@
 use risc0_zkvm::TraceEvent;
-use std::collections::{HashMap, BTreeSet};
+use std::collections::{BTreeSet, HashMap};
 
 pub struct FinishedRecord {
     pub name: String,
@@ -147,11 +147,9 @@ impl CycleTracer {
                         ((value >> 24) & 0xff) as u8;
                 }
                 if addr == self.trace_msg_len_channel {
-                    let str = String::from_utf8(
-                        self.msg_channel_buffer[0..value as usize]
-                            .to_vec(),
-                    )
-                        .unwrap();
+                    let str =
+                        String::from_utf8(self.msg_channel_buffer[0..value as usize].to_vec())
+                            .unwrap();
                     self.pending_records.push(PendingRecord {
                         name: str,
                         num_pending_records: self.pending_records.len(),
@@ -228,9 +226,11 @@ impl CycleTracer {
     #[allow(unused)]
     pub fn print_page_in_triggers(&self) {
         println!("PCs of the instructions that trigger page-in:");
-        let entries =  self.page_load_triggers.iter().
-            map(|x| format!("0x{:#08x}", x)).
-            collect::<Vec<String>>();
+        let entries = self
+            .page_load_triggers
+            .iter()
+            .map(|x| format!("0x{:#08x}", x))
+            .collect::<Vec<String>>();
         for group in entries.chunks(4) {
             println!("{}", group.join(", "));
         }

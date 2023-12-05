@@ -159,16 +159,7 @@ fn compute_checksum_small_and_reduce(ptr: &[u32; 66], z: &[[u32; 8]; 43]) -> [u3
     let mut checksum = [0u32; 9];
 
     for i in 0..22 {
-        let tmp_limbs = [
-            ptr[i * 3],
-            ptr[i * 3 + 1],
-            ptr[i * 3 + 2],
-            0u32,
-            0,
-            0,
-            0,
-            0,
-        ];
+        let tmp_limbs = [ptr[i * 3], ptr[i * 3 + 1], ptr[i * 3 + 2], 0u32, 0, 0, 0, 0];
 
         unsafe {
             sys_bigint(
@@ -324,20 +315,14 @@ fn main() {
     /************************************************************/
     start_timer!("Compute and reduce the checksum for a, b, k, n");
     start_timer!("Compute and reduce the checksum for a");
-    let az_reduce = compute_checksum_small_and_reduce(
-        unsafe { transmute::<&u8, &[u32; 66]>(&task.a[0]) },
-        &z,
-    );
+    let az_reduce =
+        compute_checksum_small_and_reduce(unsafe { transmute::<&u8, &[u32; 66]>(&task.a[0]) }, &z);
     stop_start_timer!("Compute and reduce the checksum for b");
-    let bz_reduce = compute_checksum_small_and_reduce(
-        unsafe { transmute::<&u8, &[u32; 66]>(&task.b[0]) },
-        &z,
-    );
+    let bz_reduce =
+        compute_checksum_small_and_reduce(unsafe { transmute::<&u8, &[u32; 66]>(&task.b[0]) }, &z);
     stop_start_timer!("Compute and reduce the checksum for k");
-    let kz_reduce = compute_checksum_small_and_reduce(
-        unsafe { transmute::<&u8, &[u32; 66]>(&task.k[0]) },
-        &z,
-    );
+    let kz_reduce =
+        compute_checksum_small_and_reduce(unsafe { transmute::<&u8, &[u32; 66]>(&task.k[0]) }, &z);
     stop_start_timer!("Compute and reduce the checksum for n");
     let nz_reduce = compute_checksum_small_and_reduce(
         unsafe { transmute::<&u32, &[u32; 66]>(&N_LIMBS[0]) },
@@ -352,12 +337,12 @@ fn main() {
     start_timer!("Compute and reduce the checksum for c");
     let cz_reduce = compute_checksum_long_and_reduce(
         unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_c[0]) },
-        &z
+        &z,
     );
     stop_start_timer!("Compute and reduce the checksum for kn");
     let knz_reduce = compute_checksum_long_and_reduce(
         unsafe { transmute::<&u8, &[u32; 301]>(&task.long_form_kn[0]) },
-        &z
+        &z,
     );
     stop_timer!();
     stop_timer!();
