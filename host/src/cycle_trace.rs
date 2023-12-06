@@ -18,6 +18,17 @@ pub struct PendingRecord {
     pub start_significant_cycles: usize,
 }
 
+pub struct SignificantCycleRecord {
+    pub latest_io_addrs: Vec<u32>,
+    pub latest_accessed_new_pages: Vec<u32>,
+    pub pc: u32,
+    pub current_cycle: u32,
+    pub insn: u32,
+    pub previous_cycle: u32,
+    pub previous_instruction_is_jmp: (u32, u32),
+    pub previous_instruction_is_branch: (u32, u32),
+}
+
 pub struct CycleTracer {
     pub init_state_machine: u32,
     pub trace_msg_channel: u32,
@@ -28,11 +39,17 @@ pub struct CycleTracer {
     pub msg_channel_buffer: [u8; 516],
     pub msg_len_channel_buffer: u32,
     pub num_instructions: u32,
-    pub latest_cycle_count: u32,
+    pub previous_cycle_count: u32,
     pub page_accessed: BTreeSet<u32>,
     pub latest_io_addrs: Vec<u32>,
     pub latest_accessed_new_pages: Vec<u32>,
-    pub significant_cycles: Vec<(Vec<u32>, Vec<u32>, u32, u32, u32, u32)>,
+    pub significant_cycles: Vec<SignificantCycleRecord>,
+    pub previous_pc: u32,
+    pub previous_insn: u32,
+    pub previous_instruction_is_jmp: (u32, u32),
+    pub previous_instruction_after_jmp: (u32, u32),
+    pub previous_instruction_is_branch: (u32, u32),
+    pub previous_instruction_after_branch: (u32, u32),
 }
 
 impl Default for CycleTracer {
@@ -47,11 +64,17 @@ impl Default for CycleTracer {
             msg_channel_buffer: [0u8; 516],
             msg_len_channel_buffer: 0,
             num_instructions: 0,
-            latest_cycle_count: 0,
+            previous_cycle_count: 0,
             latest_io_addrs: Vec::new(),
-            page_accessed: BTreeSet::new(),
             latest_accessed_new_pages: Vec::new(),
+            page_accessed: BTreeSet::new(),
             significant_cycles: Vec::new(),
+            previous_pc: 0,
+            previous_insn: 0,
+            previous_instruction_is_jmp: (0, 0),
+            previous_instruction_after_jmp: (0, 0),
+            previous_instruction_is_branch: (0, 0),
+            previous_instruction_after_branch: (0, 0),
         }
     }
 }
@@ -60,20 +83,47 @@ impl CycleTracer {
     pub fn handle_event(&mut self, event: TraceEvent) {
         match event {
             TraceEvent::InstructionStart { cycle, pc, insn } => {
-                if cycle - self.latest_cycle_count >= 1094 {
-                    self.significant_cycles.push((
-                        self.latest_io_addrs.clone(),
-                        self.latest_accessed_new_pages.clone(),
-                        pc,
-                        cycle,
-                        insn,
-                        self.latest_cycle_count,
-                    ));
+                let mut page_idx = self.previous_pc >> 10;
+                while !self.page_accessed.contains(&page_idx) {
+                    self.page_accessed.insert(page_idx);
+                    self.latest_accessed_new_pages.push(page_idx);
+                    page_idx = (0x0D00_0000 + page_idx * 32) >> 10;
                 }
+
+                if cycle - self.previous_cycle_count >= 1094 {
+                    self.significant_cycles.push(SignificantCycleRecord {
+                        latest_io_addrs: self.latest_io_addrs.clone(),
+                        latest_accessed_new_pages: self.latest_accessed_new_pages.clone(),
+                        pc: self.previous_pc,
+                        current_cycle: cycle,
+                        insn: self.previous_insn,
+                        previous_cycle: self.previous_cycle_count,
+                        previous_instruction_is_jmp: self.previous_instruction_after_jmp,
+                        previous_instruction_is_branch: self.previous_instruction_after_branch
+                    });
+                }
+
                 self.latest_io_addrs.clear();
                 self.latest_accessed_new_pages.clear();
-                self.latest_cycle_count = cycle;
+
+                self.previous_pc = pc;
+                self.previous_insn = insn;
+                self.previous_cycle_count = cycle;
+                self.previous_instruction_after_jmp = self.previous_instruction_is_jmp;
+                self.previous_instruction_after_branch = self.previous_instruction_is_branch;
                 self.num_instructions += 1;
+
+                if (insn & 0x7f == 0x6f) || (insn & 0x7f == 0x67) {
+                    self.previous_instruction_is_jmp = (pc, insn);
+                } else {
+                    self.previous_instruction_is_jmp = (0, 0);
+                }
+
+                if insn & 0x7f == 0b1100011 {
+                    self.previous_instruction_is_branch = (pc, insn);
+                } else {
+                    self.previous_instruction_is_branch = (0, 0);
+                }
 
                 if self.init_state_machine == 999 {
                     return;
@@ -148,10 +198,11 @@ impl CycleTracer {
             }
             TraceEvent::RegisterSet { .. } => {}
             TraceEvent::MemorySet { addr, value } => {
-                let page_idx = addr >> 10;
-                if !self.page_accessed.contains(&page_idx) {
+                let mut page_idx = addr >> 10;
+                while !self.page_accessed.contains(&page_idx) {
                     self.page_accessed.insert(page_idx);
                     self.latest_accessed_new_pages.push(page_idx);
+                    page_idx = (0x0D00_0000 + page_idx * 32) >> 10;
                 }
                 self.latest_io_addrs.push(addr);
 
@@ -173,7 +224,7 @@ impl CycleTracer {
                         name: str,
                         num_pending_records: self.pending_records.len(),
                         cur_num_instructions: self.num_instructions,
-                        cur_num_cycles: self.latest_cycle_count,
+                        cur_num_cycles: self.previous_cycle_count,
                         start_significant_cycles: self.significant_cycles.len(),
                     });
                 }
@@ -183,7 +234,7 @@ impl CycleTracer {
                         name: elem.name,
                         indents: elem.num_pending_records,
                         num_instructions: self.num_instructions - elem.cur_num_instructions,
-                        num_cycles: self.latest_cycle_count - elem.cur_num_cycles,
+                        num_cycles: self.previous_cycle_count - elem.cur_num_cycles,
                         start_significant_cycles: elem.start_significant_cycles,
                         end_significant_cycles: self.significant_cycles.len(),
                     });
@@ -246,62 +297,129 @@ impl CycleTracer {
             if report.end_significant_cycles != report.start_significant_cycles {
                 for i in report.start_significant_cycles..report.end_significant_cycles {
                     if significant_cycles_shown[i] == false {
-                        let (addrs, pages, pc, num_cycles, insn, num_previous_cycles) =
-                            &self.significant_cycles[i];
+                        let significant_cycle = &self.significant_cycles[i];
 
-                        let addr_string = if addrs.is_empty() {
+                        let addr_string = if significant_cycle.latest_io_addrs.is_empty() {
                             "".to_string()
                         } else {
-                            if addrs.len() > 4 {
-                                let str = addrs
+                            if significant_cycle.latest_io_addrs.len() > 4 {
+                                let str = significant_cycle
+                                    .latest_io_addrs
                                     .iter()
                                     .take(4)
                                     .map(|x| format!("{:#08x}", x).to_string())
                                     .collect::<Vec<String>>();
-                                format!(" that accesses {}, ...", str.join(", ").white())
+                                let last = format!("{:#08x}", significant_cycle.latest_io_addrs[significant_cycle.latest_io_addrs.len() - 1]);
+                                format!(" accesses {}, ..., {}", str.join(", ").white(), last.white())
                             } else {
-                                let str = addrs
+                                let str = significant_cycle
+                                    .latest_io_addrs
                                     .iter()
                                     .map(|x| format!("{:#08x}", x).to_string())
                                     .collect::<Vec<String>>();
-                                format!(" that accesses {}", str.join(", ").white())
+                                format!(" accesses {}", str.join(", ").white())
                             }
                         };
 
-                        let page_string = if pages.is_empty() {
+                        let page_string = if significant_cycle.latest_accessed_new_pages.is_empty()
+                        {
                             "".to_string()
                         } else {
-                            if pages.len() > 4 {
-                                let str = pages
+                            if significant_cycle.latest_accessed_new_pages.len() > 4 {
+                                let str = significant_cycle
+                                    .latest_accessed_new_pages
                                     .iter()
                                     .take(4)
                                     .map(|x| format!("{:#08x}", x << 10).to_string())
                                     .collect::<Vec<String>>();
-                                format!(" and pages-in {}, ...", str.join(", ").white())
+                                let last = format!("{:#08x}", significant_cycle.latest_accessed_new_pages[significant_cycle.latest_accessed_new_pages.len() - 1]);
+                                format!(" pages-in {}, ..., {}", str.join(", ").white(), last.white())
                             } else {
-                                let str = pages
+                                let str = significant_cycle
+                                    .latest_accessed_new_pages
                                     .iter()
                                     .map(|x| format!("{:#08x}", x << 10).to_string())
                                     .collect::<Vec<String>>();
-                                format!(" and pages-in {}", str.join(", ").white())
+                                format!(" pages-in {}", str.join(", ").white())
                             }
+                        };
+
+                        let prefix_word = if !significant_cycle.latest_accessed_new_pages.is_empty() || !significant_cycle.latest_io_addrs.is_empty() {
+                            " that".to_string()
+                        } else {
+                            "".to_string()
+                        };
+
+                        let glue_word = if !significant_cycle.latest_accessed_new_pages.is_empty() && !significant_cycle.latest_io_addrs.is_empty() {
+                            " and".to_string()
+                        } else {
+                            "".to_string()
                         };
 
                         use raki::decode::Decode;
                         use raki::Isa;
 
-                        let decode = format!("{}", insn.decode(Isa::Rv32).unwrap());
+                        let jump_string = if significant_cycle.previous_instruction_is_jmp.0 == 0 {
+                            "".to_string()
+                        } else {
+                            format!(
+                                " (due to {} at {})",
+                                format!(
+                                    "{}",
+                                    significant_cycle
+                                        .previous_instruction_is_jmp
+                                        .1
+                                        .decode(Isa::Rv32)
+                                        .unwrap()
+                                )
+                                .blue(),
+                                format!("{:#08x}", significant_cycle.previous_instruction_is_jmp.0)
+                                    .white(),
+                            )
+                        };
+
+                        let branch_string = if significant_cycle.previous_instruction_is_branch.0 == 0
+                            || significant_cycle.previous_instruction_is_branch.0 + 4 == significant_cycle.pc
+                        {
+                            "".to_string()
+                        } else {
+                            format!(
+                                " (due to {} at {})",
+                                format!(
+                                    "{}",
+                                    significant_cycle
+                                        .previous_instruction_is_branch
+                                        .1
+                                        .decode(Isa::Rv32)
+                                        .unwrap()
+                                )
+                                    .blue(),
+                                format!("{:#08x}", significant_cycle.previous_instruction_is_branch.0)
+                                    .white(),
+                            )
+                        };
+
+                        let decode =
+                            format!("{}", significant_cycle.insn.decode(Isa::Rv32).unwrap());
 
                         cur_string += &format!(
-                            "{}Cycle: {} => {}: {} at {}{}{} takes {} cycles\n",
+                            "{}Cycle: {} => {}: {} at {}{}{}{}{}{}{} takes {} cycles\n",
                             compute_indent(cur_level + 1),
-                            num_previous_cycles,
-                            num_cycles,
+                            significant_cycle.previous_cycle,
+                            significant_cycle.current_cycle,
                             decode.blue(),
-                            format!("{:#08x}", pc).white(),
+                            format!("{:#08x}", significant_cycle.pc).white(),
+                            jump_string,
+                            branch_string,
+                            prefix_word,
                             addr_string,
+                            glue_word,
                             page_string,
-                            format!("{}", num_cycles - num_previous_cycles).blue(),
+                            format!(
+                                "{}",
+                                significant_cycle.current_cycle - significant_cycle.previous_cycle
+                            )
+                            .blue(),
                         );
                     }
                     significant_cycles_shown[i] = true;
