@@ -6,7 +6,8 @@ pub struct FinishedRecord {
     pub indents: usize,
     pub num_instructions: u32,
     pub num_cycles: u32,
-    pub num_page_loaded: u32,
+    pub start_significant_cycles: usize,
+    pub end_significant_cycles: usize,
 }
 
 pub struct PendingRecord {
@@ -14,7 +15,7 @@ pub struct PendingRecord {
     pub num_pending_records: usize,
     pub cur_num_instructions: u32,
     pub cur_num_cycles: u32,
-    pub cur_num_page_loaded: u32,
+    pub start_significant_cycles: usize,
 }
 
 pub struct CycleTracer {
@@ -28,8 +29,10 @@ pub struct CycleTracer {
     pub msg_len_channel_buffer: u32,
     pub num_instructions: u32,
     pub latest_cycle_count: u32,
-    pub num_loaded_pages: u32,
-    pub page_load_triggers: BTreeSet<u32>,
+    pub page_accessed: BTreeSet<u32>,
+    pub latest_io_addrs: Vec<u32>,
+    pub latest_accessed_new_pages: Vec<u32>,
+    pub significant_cycles: Vec<(Vec<u32>, Vec<u32>, u32, u32, u32, u32)>,
 }
 
 impl Default for CycleTracer {
@@ -45,8 +48,10 @@ impl Default for CycleTracer {
             msg_len_channel_buffer: 0,
             num_instructions: 0,
             latest_cycle_count: 0,
-            num_loaded_pages: 0,
-            page_load_triggers: BTreeSet::new(),
+            latest_io_addrs: Vec::new(),
+            page_accessed: BTreeSet::new(),
+            latest_accessed_new_pages: Vec::new(),
+            significant_cycles: Vec::new(),
         }
     }
 }
@@ -56,10 +61,17 @@ impl CycleTracer {
         match event {
             TraceEvent::InstructionStart { cycle, pc, insn } => {
                 if cycle - self.latest_cycle_count >= 1094 {
-                    self.num_loaded_pages += (cycle - self.latest_cycle_count) / 1094;
-                    self.page_load_triggers.insert(pc);
+                    self.significant_cycles.push((
+                        self.latest_io_addrs.clone(),
+                        self.latest_accessed_new_pages.clone(),
+                        pc,
+                        cycle,
+                        insn,
+                        self.latest_cycle_count,
+                    ));
                 }
-
+                self.latest_io_addrs.clear();
+                self.latest_accessed_new_pages.clear();
                 self.latest_cycle_count = cycle;
                 self.num_instructions += 1;
 
@@ -136,6 +148,13 @@ impl CycleTracer {
             }
             TraceEvent::RegisterSet { .. } => {}
             TraceEvent::MemorySet { addr, value } => {
+                let page_idx = addr >> 10;
+                if !self.page_accessed.contains(&page_idx) {
+                    self.page_accessed.insert(page_idx);
+                    self.latest_accessed_new_pages.push(page_idx);
+                }
+                self.latest_io_addrs.push(addr);
+
                 if addr >= self.trace_msg_channel && addr < self.trace_msg_channel + 512 {
                     self.msg_channel_buffer[(addr - self.trace_msg_channel) as usize] =
                         (value & 0xff) as u8;
@@ -155,7 +174,7 @@ impl CycleTracer {
                         num_pending_records: self.pending_records.len(),
                         cur_num_instructions: self.num_instructions,
                         cur_num_cycles: self.latest_cycle_count,
-                        cur_num_page_loaded: self.num_loaded_pages,
+                        start_significant_cycles: self.significant_cycles.len(),
                     });
                 }
                 if addr == self.trace_cycle_channel {
@@ -165,7 +184,8 @@ impl CycleTracer {
                         indents: elem.num_pending_records,
                         num_instructions: self.num_instructions - elem.cur_num_instructions,
                         num_cycles: self.latest_cycle_count - elem.cur_num_cycles,
-                        num_page_loaded: self.num_loaded_pages - elem.cur_num_page_loaded,
+                        start_significant_cycles: elem.start_significant_cycles,
+                        end_significant_cycles: self.significant_cycles.len(),
                     });
                 }
             }
@@ -173,6 +193,8 @@ impl CycleTracer {
     }
 
     pub fn print(&self) {
+        use colored::Colorize;
+
         fn compute_indent(indent_amount: usize) -> String {
             let mut indent = String::new();
             for _ in 0..indent_amount {
@@ -184,22 +206,23 @@ impl CycleTracer {
             indent
         }
 
+        let mut significant_cycles_shown = vec![false; self.significant_cycles.len()];
+
         let mut output: HashMap<usize, String> = HashMap::new();
         let mut cur_level = 0;
 
         for report in self.finished_records.iter() {
-            if report.indents >= cur_level {
+            let mut cur_string = if report.indents >= cur_level {
                 cur_level = report.indents;
                 let mut cur_string = output.get(&cur_level).cloned().unwrap_or_default();
                 cur_string += &format!(
-                    "{}{}: {} cycles, {} instructions, {} page loads\n",
+                    "{}{}: {} cycles, {} instructions\n",
                     compute_indent(cur_level),
                     report.name,
-                    report.num_cycles,
-                    report.num_instructions,
-                    report.num_page_loaded,
+                    format!("{}", report.num_cycles).blue(),
+                    format!("{}", report.num_instructions).blue(),
                 );
-                output.insert(cur_level, cur_string);
+                cur_string
             } else if report.indents < cur_level {
                 let tmp_string = output.get(&cur_level).cloned().unwrap_or_default();
                 output.insert(cur_level, "".to_string());
@@ -208,31 +231,86 @@ impl CycleTracer {
 
                 let mut cur_string = output.get(&cur_level).cloned().unwrap_or_default();
                 cur_string += &format!(
-                    "{}{}: {} cycles, {} instructions, {} page loads \n{}",
+                    "{}{}: {} cycles, {} instructions\n{}",
                     compute_indent(cur_level),
                     report.name,
-                    report.num_cycles,
-                    report.num_instructions,
-                    report.num_page_loaded,
+                    format!("{}", report.num_cycles).blue(),
+                    format!("{}", report.num_instructions).blue(),
                     tmp_string
                 );
-                output.insert(cur_level, cur_string);
+                cur_string
+            } else {
+                unimplemented!()
+            };
+
+            if report.end_significant_cycles != report.start_significant_cycles {
+                for i in report.start_significant_cycles..report.end_significant_cycles {
+                    if significant_cycles_shown[i] == false {
+                        let (addrs, pages, pc, num_cycles, insn, num_previous_cycles) =
+                            &self.significant_cycles[i];
+
+                        let addr_string = if addrs.is_empty() {
+                            "".to_string()
+                        } else {
+                            if addrs.len() > 4 {
+                                let str = addrs
+                                    .iter()
+                                    .take(4)
+                                    .map(|x| format!("{:#08x}", x).to_string())
+                                    .collect::<Vec<String>>();
+                                format!(" that accesses {}, ...", str.join(", ").white())
+                            } else {
+                                let str = addrs
+                                    .iter()
+                                    .map(|x| format!("{:#08x}", x).to_string())
+                                    .collect::<Vec<String>>();
+                                format!(" that accesses {}", str.join(", ").white())
+                            }
+                        };
+
+                        let page_string = if pages.is_empty() {
+                            "".to_string()
+                        } else {
+                            if pages.len() > 4 {
+                                let str = pages
+                                    .iter()
+                                    .take(4)
+                                    .map(|x| format!("{:#08x}", x << 10).to_string())
+                                    .collect::<Vec<String>>();
+                                format!(" and pages-in {}, ...", str.join(", ").white())
+                            } else {
+                                let str = pages
+                                    .iter()
+                                    .map(|x| format!("{:#08x}", x << 10).to_string())
+                                    .collect::<Vec<String>>();
+                                format!(" and pages-in {}", str.join(", ").white())
+                            }
+                        };
+
+                        use raki::decode::Decode;
+                        use raki::Isa;
+
+                        let decode = format!("{}", insn.decode(Isa::Rv32).unwrap());
+
+                        cur_string += &format!(
+                            "{}Cycle: {} => {}: {} at {}{}{} takes {} cycles\n",
+                            compute_indent(cur_level + 1),
+                            num_previous_cycles,
+                            num_cycles,
+                            decode.blue(),
+                            format!("{:#08x}", pc).white(),
+                            addr_string,
+                            page_string,
+                            format!("{}", num_cycles - num_previous_cycles).blue(),
+                        );
+                    }
+                    significant_cycles_shown[i] = true;
+                }
             }
+
+            output.insert(cur_level, cur_string);
         }
 
-        println!("{}", output.get(&0).cloned().unwrap_or_default());
-    }
-
-    #[allow(unused)]
-    pub fn print_page_in_triggers(&self) {
-        println!("PCs of the instructions that trigger page-in:");
-        let entries = self
-            .page_load_triggers
-            .iter()
-            .map(|x| format!("0x{:#08x}", x))
-            .collect::<Vec<String>>();
-        for group in entries.chunks(4) {
-            println!("{}", group.join(", "));
-        }
+        println!("{}", output.get(&0).cloned().unwrap_or_default().green());
     }
 }

@@ -129,5 +129,4 @@ fn main() {
     let _ = exec.run().unwrap();
 
     cycle_tracer.borrow().print();
-    // cycle_tracer.borrow().print_page_in_triggers();
 }
