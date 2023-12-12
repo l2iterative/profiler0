@@ -142,6 +142,17 @@ For example,
 Both timers are designed to be minimalistic, in that we want them not to incur too many cycles. This is a significant improvement from previous approach that uses 
 `eprintln!("{}", env::get_cycle_count());` in the guest, which would by itself create a lot of cycles and affect the calculation.
 
+## Limitations
+
+Note that a profiler only sees memory writes, but not memory reads. Therefore, the profiler can only recognizes "dirty pages" and estimates the page unloading cost. 
+This is problematic because it misses all the page loading overhead. 
+
+Another limitation is that all the cycles that occur when a new segment starts would be counted toward the first instruction immediately after it. To avoid confusion, 
+the profiler tries to highlight such situations for the developers.
+
+We do not have a way to solve this problem at the moment, unless the profiler runs a VM alongside---in other words, if you want a very precise record of page loading 
+and page unloading, consider using GDB with the RISC-Zero-specific GDB stub: https://github.com/l2research/gdb0. This GDB stub provides commands to ask for cycles.
+
 ## License
 
 Please refer to [LICENSE](./LICENSE).
