@@ -144,14 +144,36 @@ Both timers are designed to be minimalistic, in that we want them not to incur t
 
 ## Limitations
 
-Note that a profiler only sees memory writes, but not memory reads. Therefore, the profiler can only recognizes "dirty pages" and estimates the page unloading cost. 
-This is problematic because it misses all the page loading overhead. 
+Note that a profiler only sees memory writes, but not memory reads. Therefore, although the cycle count is correct, the profiler can only explain a fraction of the 
+significant instructions on where the cycle comes from. More specifically,
 
-Another limitation is that all the cycles that occur when a new segment starts would be counted toward the first instruction immediately after it. To avoid confusion, 
-the profiler tries to highlight such situations for the developers.
+- if an instruction makes a clean page dirty, the profiler can explain which page is made dirty.
+- if an instruction loads a new page, the profiler cannot explain which page is being loaded by this instruction.
+- if an instruction loads a new page and immediately makes it dirty (this is the case of allocating from the heap), the profiler can explain the cycles related to the
+  page being dirty, but not the cycles related to the pages being loaded for the first time.
 
-We do not have a way to solve this problem at the moment, unless the profiler runs a VM alongside---in other words, if you want a very precise record of page loading 
-and page unloading, consider using GDB with the RISC-Zero-specific GDB stub: https://github.com/l2research/gdb0. This GDB stub provides commands to ask for cycles.
+Another limitation is that all the cycles that occur when a new segment starts would be counted toward the first instruction immediately after it. These instructions would 
+have an enormous number of cycle, for the following reasons.
+
+- If the instruction was originally planned to be put in the previous segment but there is insufficient space, the previous segment will be closed early with dummy cycles.
+
+- When the new segment starts, there are a number of cycles for pre-loading and post-loading.
+
+- Now that the new segment has no loaded pages, and no pages have been marked as dirty. This instruction can trigger many page operations. Assume that this instruction is a
+  syscall for 256-bit modular reduction, in the worse case, each of `x`, `y`, `modulus` crosses two pages and does not overlap, and `res` also crosses two pages that does not
+  overlap, and the instruction for the syscall itself may appear in a new page. The 9 pages could even share only the root-level page table but none of 1st, 2nd, 3rd, 4th page
+  tables---making sure that `x`, `y`, `modulus`, `res` crosses on very, very special locations. Note that `res` might have not been read before, and therefore it loads pages as
+  well as marks those pages as dirty. This can already load 37 pages and mark 11 pages as dirty. 
+
+To avoid confusion, the profiler will highlight the first instruction in a new segment. 
+
+If you want to have a more precise analysis of paging, consider using GDB with the RISC-Zero-specific GDB stub: 
+
+<p align="center">
+    https://github.com/l2research/gdb0
+</p>
+
+This GDB stub provides commands to query the current cycles, the number of loaded pages, and the number of dirty pages.
 
 ## License
 
