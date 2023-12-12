@@ -110,7 +110,7 @@ Then, the guest can use the macros to break down the program into smaller pieces
 
 The way that the profiler works is similar to a hardware watchpoint. 
 
-When the guest program starts, the guest-side cycle tracer---uses a special instruction---to notify the 
+When the guest program starts, the guest-side cycle tracer---uses some dummy instructions (writing to the zero register)---to notify the 
 host-side cycle tracer about the buffers to be watched. The code is [here](https://github.com/l2research/profiler0/blob/main/methods/guest/src/cycle_trace.rs#L14C5-L28C6).
 ```rust
 #[inline(always)]
