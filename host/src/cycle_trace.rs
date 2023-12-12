@@ -426,7 +426,7 @@ impl CycleTracer {
                             "".to_string()
                         } else {
                             format!(
-                                " (due to {} at {})",
+                                " , due to {} at {},",
                                 format!(
                                     "{}",
                                     significant_cycle
