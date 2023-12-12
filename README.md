@@ -29,6 +29,9 @@ stop_timer!();
 The profiler will output colorized information about the breakdown of the cycles. Specifically, if the profiler sees a single execution step 
 that, however, leads to a large number of cycles, it would call it out and find out the underlying reasons. 
 
+One may ask why we say this profiler is "walking on water". This is because, unlike prior solutions based on `eprintln!`, the profiler itself tries 
+very hard not to affect the original execution, in particular the cycle count, of the program. 
+
 ![An example output of the profiler.](profiler-example.png)
 
 ## How to use?
