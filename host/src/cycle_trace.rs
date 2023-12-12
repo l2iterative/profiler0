@@ -88,7 +88,6 @@ impl CycleTracer {
                 if (cycle >> 20) != (self.previous_cycle_count >> 20) {
                     // a new segment has started
                     self.page_accessed.clear();
-                    self.latest_accessed_new_pages.clear();
                     is_new_segment = true;
                 }
 
@@ -316,17 +315,25 @@ impl CycleTracer {
                             "".to_string()
                         } else {
                             if significant_cycle.latest_io_addrs.len() > 4 {
-                                let str = significant_cycle
-                                    .latest_io_addrs
+                                let mut sorted = significant_cycle.latest_io_addrs.clone();
+                                sorted.sort();
+
+                                let str = sorted
                                     .iter()
                                     .take(4)
                                     .map(|x| format!("{:#08x}", x).to_string())
                                     .collect::<Vec<String>>();
-                                let last = format!("{:#08x}", significant_cycle.latest_io_addrs[significant_cycle.latest_io_addrs.len() - 1]);
-                                format!(" writes to {}, ..., {}", str.join(", ").white(), last.white())
+                                let last = format!("{:#08x}", sorted[sorted.len() - 1]);
+                                format!(
+                                    " writes to {}, ..., {}",
+                                    str.join(", ").white(),
+                                    last.white()
+                                )
                             } else {
-                                let str = significant_cycle
-                                    .latest_io_addrs
+                                let mut sorted = significant_cycle.latest_io_addrs.clone();
+                                sorted.sort();
+
+                                let str = sorted
                                     .iter()
                                     .map(|x| format!("{:#08x}", x).to_string())
                                     .collect::<Vec<String>>();
@@ -339,38 +346,52 @@ impl CycleTracer {
                             "".to_string()
                         } else {
                             if significant_cycle.latest_accessed_new_pages.len() > 4 {
-                                let str = significant_cycle
-                                    .latest_accessed_new_pages
+                                let mut sorted =
+                                    significant_cycle.latest_accessed_new_pages.clone();
+                                sorted.sort();
+
+                                let str = sorted
                                     .iter()
                                     .take(4)
                                     .map(|x| format!("{:#08x}", x << 10).to_string())
                                     .collect::<Vec<String>>();
-                                let last = format!("{:#08x}", significant_cycle.latest_accessed_new_pages[significant_cycle.latest_accessed_new_pages.len() - 1]);
-                                format!(" might have paged-in {}, ..., {}", str.join(", ").white(), last.white())
+                                let last = format!("{:#08x}", sorted[sorted.len() - 1] << 10,);
+                                format!(
+                                    " marks pages {}, ..., {} as dirty",
+                                    str.join(", ").white(),
+                                    last.white()
+                                )
                             } else {
-                                let str = significant_cycle
-                                    .latest_accessed_new_pages
+                                let mut sorted =
+                                    significant_cycle.latest_accessed_new_pages.clone();
+                                sorted.sort();
+
+                                let str = sorted
                                     .iter()
                                     .map(|x| format!("{:#08x}", x << 10).to_string())
                                     .collect::<Vec<String>>();
-                                format!(" pages-in {}", str.join(", ").white())
+                                format!(" marks pages {} as dirty", str.join(", ").white())
                             }
                         };
 
-                        let prefix_word = if !significant_cycle.latest_accessed_new_pages.is_empty() || !significant_cycle.latest_io_addrs.is_empty() {
+                        let prefix_word = if !significant_cycle.latest_accessed_new_pages.is_empty()
+                            || !significant_cycle.latest_io_addrs.is_empty()
+                        {
                             " that".to_string()
                         } else {
                             "".to_string()
                         };
 
-                        let glue_word = if !significant_cycle.latest_accessed_new_pages.is_empty() && !significant_cycle.latest_io_addrs.is_empty() {
+                        let glue_word = if !significant_cycle.latest_accessed_new_pages.is_empty()
+                            && !significant_cycle.latest_io_addrs.is_empty()
+                        {
                             " and".to_string()
                         } else {
                             "".to_string()
                         };
 
                         let first_insn_word = if significant_cycle.first_instruction_new_segment {
-                            ", first instruction in the new segment, ".to_string()
+                            ", first instruction in the new segment,".to_string()
                         } else {
                             "".to_string()
                         };
@@ -382,7 +403,7 @@ impl CycleTracer {
                             "".to_string()
                         } else {
                             format!(
-                                " (due to {} at {})",
+                                " , due to {} at {},",
                                 format!(
                                     "{}",
                                     significant_cycle
@@ -391,14 +412,16 @@ impl CycleTracer {
                                         .decode(Isa::Rv32)
                                         .unwrap()
                                 )
-                                    .blue(),
+                                .blue(),
                                 format!("{:#08x}", significant_cycle.previous_instruction_is_jmp.0)
                                     .white(),
                             )
                         };
 
-                        let branch_string = if significant_cycle.previous_instruction_is_branch.0 == 0
-                            || significant_cycle.previous_instruction_is_branch.0 + 4 == significant_cycle.pc
+                        let branch_string = if significant_cycle.previous_instruction_is_branch.0
+                            == 0
+                            || significant_cycle.previous_instruction_is_branch.0 + 4
+                                == significant_cycle.pc
                         {
                             "".to_string()
                         } else {
@@ -412,9 +435,12 @@ impl CycleTracer {
                                         .decode(Isa::Rv32)
                                         .unwrap()
                                 )
-                                    .blue(),
-                                format!("{:#08x}", significant_cycle.previous_instruction_is_branch.0)
-                                    .white(),
+                                .blue(),
+                                format!(
+                                    "{:#08x}",
+                                    significant_cycle.previous_instruction_is_branch.0
+                                )
+                                .white(),
                             )
                         };
 
@@ -439,7 +465,7 @@ impl CycleTracer {
                                 "{}",
                                 significant_cycle.current_cycle - significant_cycle.previous_cycle
                             )
-                                .blue(),
+                            .blue(),
                         );
                     }
                     significant_cycles_shown[i] = true;
