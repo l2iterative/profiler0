@@ -1,0 +1,12 @@
+The authors intend this repo to be dual-licensed under MIT or Apache2, at your option.
+
+The "timer" design in the profiler was from arkworks-rs (https://github.com/arkworks-rs/std/blob/master/src/perf_trace.rs). 
+Fortunately, arkworks-rs is dual-licensed under MIT or Apache2 as well.
+
+The host/guest program in our example is trying to explore an algorithm for 2048-bit modular multiplication. 
+The idea of the algorithm was from Jeremy Bruestle. It came out from a discussion relating to Kaminski's algorithm in the Discord.
+https://discord.com/channels/953703904086994974/1177405013249765437
+
+The formal text for the licenses can be found at:
+* MIT License (docs/LICENSE-MIT or http://opensource.org/licenses/MIT)
+* Apache License, Version 2.0 (docs/LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
