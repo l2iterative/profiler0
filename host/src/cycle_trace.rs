@@ -27,6 +27,7 @@ pub struct SignificantCycleRecord {
     pub previous_cycle: u32,
     pub previous_instruction_is_jmp: (u32, u32),
     pub previous_instruction_is_branch: (u32, u32),
+    pub first_instruction_new_segment: bool,
 }
 
 pub struct CycleTracer {
@@ -83,11 +84,28 @@ impl CycleTracer {
     pub fn handle_event(&mut self, event: TraceEvent) {
         match event {
             TraceEvent::InstructionStart { cycle, pc, insn } => {
+                let mut is_new_segment = false;
+                if (cycle >> 20) != (self.previous_cycle_count >> 20) {
+                    // a new segment has started
+                    self.page_accessed.clear();
+                    self.latest_accessed_new_pages.clear();
+                    is_new_segment = true;
+                }
+
                 let mut page_idx = self.previous_pc >> 10;
                 while !self.page_accessed.contains(&page_idx) {
                     self.page_accessed.insert(page_idx);
                     self.latest_accessed_new_pages.push(page_idx);
                     page_idx = (0x0D00_0000 + page_idx * 32) >> 10;
+                }
+
+                for addr in self.latest_io_addrs.iter() {
+                    let mut page_idx = addr >> 10;
+                    while !self.page_accessed.contains(&page_idx) {
+                        self.page_accessed.insert(page_idx);
+                        self.latest_accessed_new_pages.push(page_idx);
+                        page_idx = (0x0D00_0000 + page_idx * 32) >> 10;
+                    }
                 }
 
                 if cycle - self.previous_cycle_count >= 1094 {
@@ -99,7 +117,8 @@ impl CycleTracer {
                         insn: self.previous_insn,
                         previous_cycle: self.previous_cycle_count,
                         previous_instruction_is_jmp: self.previous_instruction_after_jmp,
-                        previous_instruction_is_branch: self.previous_instruction_after_branch
+                        previous_instruction_is_branch: self.previous_instruction_after_branch,
+                        first_instruction_new_segment: is_new_segment,
                     });
                 }
 
@@ -198,12 +217,6 @@ impl CycleTracer {
             }
             TraceEvent::RegisterSet { .. } => {}
             TraceEvent::MemorySet { addr, value } => {
-                let mut page_idx = addr >> 10;
-                while !self.page_accessed.contains(&page_idx) {
-                    self.page_accessed.insert(page_idx);
-                    self.latest_accessed_new_pages.push(page_idx);
-                    page_idx = (0x0D00_0000 + page_idx * 32) >> 10;
-                }
                 self.latest_io_addrs.push(addr);
 
                 if addr >= self.trace_msg_channel && addr < self.trace_msg_channel + 512 {
@@ -310,14 +323,14 @@ impl CycleTracer {
                                     .map(|x| format!("{:#08x}", x).to_string())
                                     .collect::<Vec<String>>();
                                 let last = format!("{:#08x}", significant_cycle.latest_io_addrs[significant_cycle.latest_io_addrs.len() - 1]);
-                                format!(" accesses {}, ..., {}", str.join(", ").white(), last.white())
+                                format!(" writes to {}, ..., {}", str.join(", ").white(), last.white())
                             } else {
                                 let str = significant_cycle
                                     .latest_io_addrs
                                     .iter()
                                     .map(|x| format!("{:#08x}", x).to_string())
                                     .collect::<Vec<String>>();
-                                format!(" accesses {}", str.join(", ").white())
+                                format!(" writes to {}", str.join(", ").white())
                             }
                         };
 
@@ -333,7 +346,7 @@ impl CycleTracer {
                                     .map(|x| format!("{:#08x}", x << 10).to_string())
                                     .collect::<Vec<String>>();
                                 let last = format!("{:#08x}", significant_cycle.latest_accessed_new_pages[significant_cycle.latest_accessed_new_pages.len() - 1]);
-                                format!(" pages-in {}, ..., {}", str.join(", ").white(), last.white())
+                                format!(" might have paged-in {}, ..., {}", str.join(", ").white(), last.white())
                             } else {
                                 let str = significant_cycle
                                     .latest_accessed_new_pages
@@ -356,6 +369,12 @@ impl CycleTracer {
                             "".to_string()
                         };
 
+                        let first_insn_word = if significant_cycle.first_instruction_new_segment {
+                            ", first instruction in the new segment, ".to_string()
+                        } else {
+                            "".to_string()
+                        };
+
                         use raki::decode::Decode;
                         use raki::Isa;
 
@@ -372,7 +391,7 @@ impl CycleTracer {
                                         .decode(Isa::Rv32)
                                         .unwrap()
                                 )
-                                .blue(),
+                                    .blue(),
                                 format!("{:#08x}", significant_cycle.previous_instruction_is_jmp.0)
                                     .white(),
                             )
@@ -403,12 +422,13 @@ impl CycleTracer {
                             format!("{}", significant_cycle.insn.decode(Isa::Rv32).unwrap());
 
                         cur_string += &format!(
-                            "{}Cycle: {} => {}: {} at {}{}{}{}{}{}{} takes {} cycles\n",
+                            "{}Cycle: {} => {}: {} at {}{}{}{}{}{}{}{} takes {} cycles\n",
                             compute_indent(cur_level + 1),
                             significant_cycle.previous_cycle,
                             significant_cycle.current_cycle,
                             decode.blue(),
                             format!("{:#08x}", significant_cycle.pc).white(),
+                            first_insn_word,
                             jump_string,
                             branch_string,
                             prefix_word,
@@ -419,7 +439,7 @@ impl CycleTracer {
                                 "{}",
                                 significant_cycle.current_cycle - significant_cycle.previous_cycle
                             )
-                            .blue(),
+                                .blue(),
                         );
                     }
                     significant_cycles_shown[i] = true;
