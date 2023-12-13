@@ -5,7 +5,7 @@ pub use self::inner::*;
 #[cfg(feature = "print-trace")]
 pub mod inner {
     #[no_mangle]
-    pub static mut TRACE_MSG_CHANNEL: [u32; 128] = [0u32; 128];
+    pub static mut TRACE_MSG_CHANNEL: [u8; 512] = [0u8; 512];
     #[no_mangle]
     pub static mut TRACE_MSG_LEN_CHANNEL: u32 = 0;
     #[no_mangle]
@@ -35,9 +35,9 @@ pub mod inner {
             unsafe {
                 let len = $msg.len();
                 core::ptr::copy(
-                    core::mem::transmute::<*const u8, *const u32>($msg.as_ptr()),
+                    $msg.as_ptr(),
                     TRACE_MSG_CHANNEL.as_mut_ptr(),
-                    (len + 3) / 4,
+                    len,
                 );
                 // prevent out-of-order execution
                 core::arch::asm!(
