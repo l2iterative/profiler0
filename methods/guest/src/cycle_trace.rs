@@ -4,8 +4,11 @@ pub use self::inner::*;
 #[macro_use]
 #[cfg(feature = "print-trace")]
 pub mod inner {
+    #[repr(align(4))]
+    pub struct MsgChannel(pub [u8; 512]);
+
     #[no_mangle]
-    pub static mut TRACE_MSG_CHANNEL: [u8; 512] = [0u8; 512];
+    pub static mut TRACE_MSG_CHANNEL: MsgChannel = MsgChannel([0u8; 512]);
     #[no_mangle]
     pub static mut TRACE_MSG_LEN_CHANNEL: u32 = 0;
     #[no_mangle]
@@ -36,7 +39,7 @@ pub mod inner {
                 let len = $msg.len();
                 core::ptr::copy(
                     $msg.as_ptr(),
-                    TRACE_MSG_CHANNEL.as_mut_ptr(),
+                    TRACE_MSG_CHANNEL.0.as_mut_ptr(),
                     len,
                 );
                 // prevent out-of-order execution
