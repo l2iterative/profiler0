@@ -391,7 +391,7 @@ impl CycleTracer {
                         };
 
                         let first_insn_word = if significant_cycle.first_instruction_new_segment {
-                            ", first instruction in the new segment,".to_string()
+                            " (first instruction in the new segment)".to_string()
                         } else {
                             "".to_string()
                         };
