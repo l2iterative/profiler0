@@ -170,7 +170,7 @@ To avoid confusion, the profiler will highlight the first instruction in a new s
 If you want to have a more precise analysis of paging, consider using GDB with the RISC-Zero-specific GDB stub: 
 
 <p align="center">
-    https://github.com/l2research/gdb0
+    [https://github.com/l2research/gdb0](https://github.com/l2iterative/gdb0)
 </p>
 
 This GDB stub provides commands to query the current cycles, the number of loaded pages, and the number of dirty pages.
