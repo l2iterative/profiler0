@@ -8,3 +8,4 @@ edition = "2021"
 risc0-zkvm = { version = "0.20.1", features = ["client"] }
 raki = "0.1.3"
 colored = "2.0.4"
+ahash = "=0.8.7"
