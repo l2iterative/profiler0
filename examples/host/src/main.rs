@@ -1,4 +1,3 @@
-use crate::cycle_trace::CycleTracer;
 use core::str::FromStr;
 use methods::METHOD_ELF;
 use num_bigint::{BigUint, RandBigInt};
@@ -9,7 +8,7 @@ use risc0_zkvm::{ExecutorEnv, ExecutorImpl};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-mod cycle_trace;
+use l2r0_profiler_host::CycleTracer;
 
 pub struct Task {
     // 22 limbs, each of length 96 bits = 3 x u32 = 12 x u8

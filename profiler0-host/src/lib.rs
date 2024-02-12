@@ -215,20 +215,18 @@ impl CycleTracer {
                 }
             }
             TraceEvent::RegisterSet { .. } => {}
-            TraceEvent::MemorySet { addr, value } => {
+            TraceEvent::MemorySet { addr, region } => {
                 self.latest_io_addrs.push(addr);
 
                 if addr >= self.trace_msg_channel && addr < self.trace_msg_channel + 512 {
-                    self.msg_channel_buffer[(addr - self.trace_msg_channel) as usize] =
-                        (value & 0xff) as u8;
-                    self.msg_channel_buffer[(addr - self.trace_msg_channel + 1) as usize] =
-                        ((value >> 8) & 0xff) as u8;
-                    self.msg_channel_buffer[(addr - self.trace_msg_channel + 2) as usize] =
-                        ((value >> 16) & 0xff) as u8;
-                    self.msg_channel_buffer[(addr - self.trace_msg_channel + 3) as usize] =
-                        ((value >> 24) & 0xff) as u8;
+                    let start = (addr - self.trace_msg_channel) as usize;
+                    self.msg_channel_buffer[start..(start + region.len())].copy_from_slice(&region);
                 }
                 if addr == self.trace_msg_len_channel {
+                    let value = (region[0] as u32)
+                        + ((region[1] as u32) << 8)
+                        + ((region[2] as u32) << 16)
+                        + ((region[3] as u32) << 24);
                     let str =
                         String::from_utf8(self.msg_channel_buffer[0..value as usize].to_vec())
                             .unwrap();

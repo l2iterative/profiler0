@@ -40,7 +40,7 @@ There are necessary changes that need to be made on the RISC Zero program's host
 
 #### Host
 
-The host should have [cycle_trace.rs](host/src/cycle_trace.rs) in place and use `ExecutorEnv` to run the program.
+The host should have [cycle_trace.rs](examples/host/src/cycle_trace.rs) in place and use `ExecutorEnv` to run the program.
 
 ```rust
 let cycle_tracer = Rc::new(RefCell::new(CycleTracer::default()));
@@ -86,7 +86,7 @@ cycle_tracer.borrow().print();
 
 #### Guest
 
-Guest also has its own [cycle_trace.rs](methods/guest/src/cycle_trace.rs). Put it in place.
+Guest also has its own [cycle_trace.rs](examples/methods/guest/src/cycle_trace.rs). Put it in place.
 
 When the program starts, as shown below.
 

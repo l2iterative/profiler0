@@ -1,8 +1,6 @@
 use core::mem::{transmute, MaybeUninit};
 use risc0_zkvm::guest::env;
-risc0_zkvm::guest::entry!(main);
-
-mod cycle_trace;
+use l2r0_profiler_guest::*;
 
 pub(crate) const BIGINT_WIDTH_WORDS: usize = 8;
 const OP_MULTIPLY: u32 = 0;
@@ -246,7 +244,7 @@ fn compute_checksum_long_and_reduce(ptr: &[u32; 301], z: &[[u32; 8]; 43]) -> [u3
 }
 
 fn main() {
-    cycle_trace::init_trace_logger();
+    l2r0_profiler_guest::init_trace_logger();
     start_timer!("Total");
 
     /************************************************************/

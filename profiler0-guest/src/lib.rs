@@ -2,7 +2,7 @@
 pub use self::inner::*;
 
 #[macro_use]
-#[cfg(feature = "print-trace")]
+#[cfg(all(target_os = "zkvm", feature = "print-trace"))]
 pub mod inner {
     #[repr(align(4))]
     pub struct MsgChannel(pub [u8; 512]);
@@ -33,15 +33,9 @@ pub mod inner {
     #[macro_export]
     macro_rules! start_timer {
         ($msg: expr) => {{
-            use $crate::cycle_trace::inner::{TRACE_MSG_CHANNEL, TRACE_MSG_LEN_CHANNEL};
-
             unsafe {
                 let len = $msg.len();
-                core::ptr::copy(
-                    $msg.as_ptr(),
-                    TRACE_MSG_CHANNEL.0.as_mut_ptr(),
-                    len,
-                );
+                core::ptr::copy($msg.as_ptr(), TRACE_MSG_CHANNEL.0.as_mut_ptr(), len);
                 // prevent out-of-order execution
                 core::arch::asm!(
                     r#"
@@ -56,7 +50,6 @@ pub mod inner {
     #[macro_export]
     macro_rules! stop_timer {
         () => {{
-            use $crate::cycle_trace::inner::TRACE_SIGNAL_CHANNEL;
             unsafe {
                 core::ptr::write_volatile((&mut TRACE_SIGNAL_CHANNEL) as *mut u32, 0u32);
                 core::arch::asm!(
@@ -78,7 +71,7 @@ pub mod inner {
 }
 
 #[macro_use]
-#[cfg(not(feature = "print-trace"))]
+#[cfg(any(not(target_os = "zkvm"), not(feature = "print-trace")))]
 pub mod inner {
     #[inline(always)]
     pub fn init_trace_logger() {}

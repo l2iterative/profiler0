@@ -1,8 +1,11 @@
 [workspace]
 members = [
-    "host",
-    "methods",
+    "examples/host",
+    "examples/methods",
+    "profiler0-host",
+    "profiler0-guest"
 ]
+exclude = [ "profiler-example.png", "title.png" ]
 resolver = "2"
 
 # Always optimize; building and running the guest takes much longer without optimization.

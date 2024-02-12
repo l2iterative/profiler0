@@ -1,0 +1,10 @@
+[package]
+name = "l2r0-profiler-host"
+version = "0.21.0"
+authors = ["Weikeng Chen <weikeng.chen@l2iterative.com>"]
+edition = "2021"
+
+[dependencies]
+risc0-zkvm = { version = "0.20.1", features = ["client"] }
+raki = "0.1.3"
+colored = "2.0.4"
