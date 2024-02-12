@@ -11,6 +11,4 @@ risc0-zkvm = { version = "0.20.1", features = ["prove"] }
 num-bigint = { version = "0.4.4", features = ["rand"] }
 rand_chacha = "0.3.1"
 num-traits = "0.2.17"
-raki = "0.1.3"
-colored = "=2.0.4"
 l2r0-profiler-host = { path = "../../profiler0-host" }
