@@ -1,6 +1,6 @@
 # Walking on water with this profiler for RISC Zero
 
-<img src="title.png" align="right" alt="A young boy walking on water heading to a place with Bonsai." width="300"/>
+<img src="https://github.com/l2iterative/profiler0/raw/main/title.png" align="right" alt="A young boy walking on water heading to a place with Bonsai." width="300"/>
 
 This repo presents a plugin for RISC Zero programs that counts the number of cycles contributing by different parts of the program, 
 detects execution steps that lead to significant number of cycles, and explains the underlying reasons.
@@ -32,7 +32,7 @@ that, however, leads to a large number of cycles, it would call it out and find 
 One may ask why we say this profiler is "walking on water". This is because, unlike prior solutions based on `eprintln!`, the profiler itself tries 
 very hard not to affect the original execution, in particular the cycle count, of the program. 
 
-![An example output of the profiler.](profiler-example.png)
+![An example output of the profiler.](https://github.com/l2iterative/profiler0/raw/main/profiler-example.png)
 
 ## How to use?
 
@@ -40,7 +40,7 @@ There are necessary changes that need to be made on the RISC Zero program's host
 
 #### Host
 
-The host should have [cycle_trace.rs](examples/host/src/cycle_trace.rs) in place and use `ExecutorEnv` to run the program.
+The host should use the host crate `l2r0-profiler-host` and use `ExecutorEnv` to run the program.
 
 ```rust
 let cycle_tracer = Rc::new(RefCell::new(CycleTracer::default()));
@@ -86,13 +86,13 @@ cycle_tracer.borrow().print();
 
 #### Guest
 
-Guest also has its own [cycle_trace.rs](examples/methods/guest/src/cycle_trace.rs). Put it in place.
+Guest also has its own crate, `l2r0-profiler-guest`. Import it, and remember to turn on the `print-trace` feature.
 
 When the program starts, as shown below.
 
 ```rust
 fn main() {
-    cycle_trace::init_trace_logger();
+    l2r0_profiler_guest::init_trace_logger();
     start_timer!("Total");
     ......
     stop_timer!();
@@ -101,7 +101,7 @@ fn main() {
 
 We first initialize the trace logger.
 ```rust
-cycle_trace::init_trace_logger();
+l2r0_profiler_guest::init_trace_logger();
 ```
 
 Then, the guest can use the macros to break down the program into smaller pieces for examination.
