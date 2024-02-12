@@ -3,6 +3,8 @@ name = "l2r0-profiler-guest"
 version = "0.21.0"
 authors = ["Weikeng Chen <weikeng.chen@l2iterative.com>"]
 edition = "2021"
+license = "MIT or Apache2"
+description = "Profiler for RISC Zero, guest side program"
 
 [features]
 print-trace = []
