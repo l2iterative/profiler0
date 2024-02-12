@@ -1,10 +1,12 @@
 [package]
 name = "l2r0-profiler-host"
-version = "0.21.0"
+version = "0.20.1"
 authors = ["Weikeng Chen <weikeng.chen@l2iterative.com>"]
 edition = "2021"
 license = "MIT/Apache-2.0"
 description = "Profiler for RISC Zero, host side program"
+repository = "https://github.com/l2iterative/profiler0"
+readme = "../README.md"
 
 [dependencies]
 risc0-zkvm = { version = "0.20.1", features = ["client"] }
